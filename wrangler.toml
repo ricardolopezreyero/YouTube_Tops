@@ -1,0 +1,26 @@
+name = "youtube-tops"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = "public"
+
+# ─── D1 Database (corpus compartido de videos) ───────────────────────────────
+[[d1_databases]]
+  binding = "DB"
+  database_name = "youtube_tops"
+  database_id = "c53c86e9-7482-4cdc-8679-f50a015efb09"
+
+# ─── KV (caché / deduplicación) ──────────────────────────────────────────────
+[[kv_namespaces]]
+  binding = "CACHE"
+  id = "4af0c9a93b924f9a87041fde33967505"
+
+# ─── Workers AI ──────────────────────────────────────────────────────────────
+[ai]
+  binding = "AI"
+
+# ─── Variables de entorno (no secretas) ──────────────────────────────────────
+[vars]
+  FIREBASE_PROJECT_ID = "tops-b68a3"
+
+# ─── Triggers (TODO fase posterior) ──────────────────────────────────────────
+# [triggers]
+# crons = ["0 */6 * * *"]   # TODO: crecer corpus en segundo plano cada 6h

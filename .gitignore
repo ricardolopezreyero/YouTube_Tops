@@ -1,0 +1,30 @@
+# Secrets — NEVER commit
+.env
+.dev.vars
+*client_secret*.json
+serviceAccount*.json
+
+# Databases
+*.db
+*.sqlite
+
+# Node
+node_modules/
+.node_modules/
+
+# Build artifacts
+dist/
+.cache/
+.wrangler/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary seed files
+/tmp/seed_*.sql
+seed-data.sql

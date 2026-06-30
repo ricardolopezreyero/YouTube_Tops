@@ -1,0 +1,42 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Deploy Cloudflare Pages (static + Functions)
+      # wrangler pages deploy sube:
+      #   • Archivos estáticos de /public
+      #   • Pages Functions de /functions (detectado automáticamente)
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: pages deploy public --project-name=youtube-tops --commit-dirty=true
+
+      # Nota: YOUTUBE_API_KEY se configura como Cloudflare Secret, no como GitHub Secret.
+      # Corre una sola vez: wrangler secret put YOUTUBE_API_KEY
