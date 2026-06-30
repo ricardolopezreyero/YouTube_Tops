@@ -66,39 +66,12 @@ $('btn-google-login').addEventListener('click', async () => {
   const btn=$('btn-google-login'), errEl=$('login-error');
   errEl.classList.add('hidden'); btn.disabled=true;
   try { await signInWithPopup(auth, googleProvider); }
-  catch(err) { errEl.textContent=`Error: ${err.message}`; errEl.classList.remove('hidden'); }
+  catch(err) { errEl.textContent=`Error al iniciar sesión: ${err.message}`; errEl.classList.remove('hidden'); }
   finally { btn.disabled=false; }
 });
 $('btn-logout').addEventListener('click', () => signOut(auth));
-
-onAuthStateChanged(auth, async user => {
-  state.user = user;
-  if (!user) {
-    Object.assign(state, { userProfile:null, idToken:null, feedback:{}, lists:[], listItems:{} });
-    logger.info('Auth: sesión cerrada');
-    showScreen('screen-login'); return;
-  }
-  logger.info('Auth: usuario autenticado', { uid: user.uid?.slice(0,8) });
-  try {
-    state.idToken = await user.getIdToken();
-    let snap=null;
-    try { snap = await getDoc(doc(db,'users',user.uid)); }
-    catch(e) { console.warn('Firestore getDoc:', e.message); showScreen('screen-onboard'); return; }
-
-    if (!snap.exists() || !snap.data()?.interest_keywords?.length) {
-      showScreen('screen-onboard');
-    } else {
-      applyProfileToState(snap.data());
-      showScreen('screen-app');
-      renderListsBadge();
-      loadVideos(true);
-    }
-  } catch(err) {
-    const e=$('login-error');
-    if(e){ e.textContent=`Error: ${err.message}`; e.classList.remove('hidden'); }
-    await signOut(auth).catch(()=>{});
-  }
-});
+// onAuthStateChanged se registra al final del módulo (ver initAuth) para garantizar
+// que todos los const del módulo están inicializados antes de que el callback pueda ejecutarse.
 
 async function getToken() {
   if (!state.user) throw new Error('No hay usuario autenticado');
@@ -930,9 +903,50 @@ function applyProfileToState(profile){
 }
 
 // ── Inicialización final ──────────────────────────────────────────────────────
-// IMPORTANTE: wireKeywordsUI() se llama AQUÍ, después de que todos los
-// `const` del módulo (WEIGHT_KEYS, btnParams, etc.) estén inicializados.
-// Llamarla antes causa TDZ (Temporal Dead Zone) crash en los closures.
+// Todo el wiring de event listeners y el registro de onAuthStateChanged
+// se hace aquí, después de que TODOS los const del módulo están inicializados.
 updateWeightsSum();
 wireKeywordsUI();
+
+// Registrar onAuthStateChanged aquí garantiza que cuando el callback se
+// ejecute (siempre async), todos los const ya están inicializados.
+onAuthStateChanged(auth, async user => {
+  state.user = user;
+  if (!user) {
+    Object.assign(state, { userProfile:null, idToken:null, feedback:{}, lists:[], listItems:{} });
+    logger.info('Auth: sesión cerrada');
+    showScreen('screen-login');
+    return;
+  }
+  logger.info('Auth: usuario autenticado', { uid: user.uid?.slice(0,8) });
+
+  // Cualquier error durante la carga del perfil redirige a onboarding,
+  // NUNCA muestra un error técnico en la pantalla de login.
+  try {
+    state.idToken = await user.getIdToken();
+
+    let snap = null;
+    try {
+      snap = await getDoc(doc(db, 'users', user.uid));
+    } catch(fsErr) {
+      logger.warn('Firestore no disponible, mostrando onboarding', { msg: fsErr.message });
+      showScreen('screen-onboard');
+      return;
+    }
+
+    if (!snap.exists() || !snap.data()?.interest_keywords?.length) {
+      showScreen('screen-onboard');
+    } else {
+      applyProfileToState(snap.data());
+      showScreen('screen-app');
+      renderListsBadge();
+      loadVideos(true);
+    }
+  } catch(err) {
+    logger.error('Error en onAuthStateChanged', { msg: err.message, stack: err.stack?.slice(0,200) });
+    // No mostramos errores técnicos al usuario — lo mandamos a onboarding
+    showScreen('screen-onboard');
+  }
+});
+
 logger.info('App inicializada', { ua: navigator.userAgent.slice(0,50) });
