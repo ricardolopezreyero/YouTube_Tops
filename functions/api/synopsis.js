@@ -1,8 +1,9 @@
 /**
  * POST /api/synopsis
- * Obtiene subtítulos vía InnerTube API (sin OAuth, sin scraping HTML)
- * y genera un resumen de 3 párrafos con Workers AI.
- * RLR · EYE·181218
+ * Genera un resumen de 3 párrafos usando:
+ *   1. Subtítulos vía timedtext API (si disponibles)
+ *   2. Descripción completa del video vía YouTube Data API v3 (fallback)
+ * Usa Workers AI para resumir. RLR · EYE·181218
  */
 
 const CORS = {
@@ -11,97 +12,53 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-// InnerTube context — cliente web estándar
-const INNERTUBE_CTX = {
-  context: {
-    client: {
-      clientName:    'WEB',
-      clientVersion: '2.20240101.01.00',
-      hl:            'es',
-      gl:            'MX',
-    },
-  },
-};
-
 export async function onRequestOptions() {
   return new Response(null, { headers: CORS });
 }
 
 export async function onRequestPost(context) {
   const { request, env } = context;
+  const apiKey = env.YOUTUBE_API_KEY;
+
   try {
     const { videoId, title = '' } = await request.json().catch(() => ({}));
     if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId))
       return jsonError('videoId inválido', 400);
 
-    // ── 1. InnerTube player endpoint → caption tracks ─────────────────────────
-    const playerRes = await fetch(
-      'https://www.youtube.com/youtubei/v1/player?prettyPrint=false',
-      {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ videoId, ...INNERTUBE_CTX }),
-      }
-    );
+    // ── 1. Intentar subtítulos vía timedtext (captions ASR directas) ──────────
+    const transcript = await fetchTranscript(videoId);
 
-    if (!playerRes.ok)
-      return jsonOk({ synopsis: null, error: 'No se pudo consultar la información del video.' });
+    let sourceText = '';
+    let sourceLabel = '';
 
-    const player = await playerRes.json();
-    const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
-
-    // ── 2. Fallback: timedtext list si InnerTube no devolvió tracks ───────────
-    let captionUrl = null;
-    let captionLang = 'es';
-
-    if (tracks.length > 0) {
-      const preferred = tracks.find(t => t.languageCode?.startsWith('es'))
-        || tracks.find(t => t.languageCode?.startsWith('en'))
-        || tracks[0];
-      captionUrl  = preferred.baseUrl;
-      captionLang = preferred.languageCode ?? 'es';
+    if (transcript && transcript.length > 150) {
+      sourceText  = sampleText(transcript, 10_000);
+      sourceLabel = 'subtítulos del video';
     } else {
-      // Intentar directamente el endpoint de timedtext
-      for (const lang of ['es', 'es-419', 'en', 'en-US']) {
-        const testUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${lang}`;
-        const testRes = await fetch(testUrl);
-        if (testRes.ok) {
-          const text = await testRes.text();
-          if (text.length > 50) { captionUrl = testUrl; captionLang = lang; break; }
-        }
-      }
+      // ── 2. Fallback: descripción completa con YouTube Data API ───────────────
+      if (!apiKey)
+        return jsonOk({ synopsis: null, error: 'Sin subtítulos disponibles y sin API key configurada.' });
+
+      const desc = await fetchDescription(apiKey, videoId);
+      if (!desc || desc.length < 50)
+        return jsonOk({ synopsis: null, error: 'Este video no tiene suficiente información disponible.' });
+
+      sourceText  = sampleText(desc, 6_000);
+      sourceLabel = 'descripción del video';
     }
 
-    if (!captionUrl)
-      return jsonOk({ synopsis: null, error: 'Este video no tiene subtítulos disponibles.' });
-
-    // ── 3. Descargar subtítulos ───────────────────────────────────────────────
-    const capRes = await fetch(captionUrl);
-    if (!capRes.ok)
-      return jsonOk({ synopsis: null, error: 'No se pudieron descargar los subtítulos.' });
-
-    const capText = await capRes.text();
-
-    // ── 4. Parsear XML → texto plano ──────────────────────────────────────────
-    const transcript = parseTranscriptXml(capText);
-    if (transcript.length < 80)
-      return jsonOk({ synopsis: null, error: 'Los subtítulos son demasiado cortos para resumir.' });
-
-    const chunk = sampleTranscript(transcript, 11_000);
-
-    // ── 5. Resumir con Workers AI ─────────────────────────────────────────────
-    const langLabel = captionLang.startsWith('es') ? 'español' : 'inglés (traducir al español)';
-    const prompt = `Transcript del video "${title}" en ${langLabel}:
+    // ── 3. Generar resumen con Workers AI ─────────────────────────────────────
+    const prompt = `Información del video "${title}" (fuente: ${sourceLabel}):
 
 ---
-${chunk}
+${sourceText}
 ---
 
 Escribe un resumen en ESPAÑOL con exactamente 3 párrafos. Sin encabezados ni numeración.
-Párrafo 1: De qué trata el video y cuál es la premisa central.
-Párrafo 2: Los puntos, frameworks o tácticas más concretos.
-Párrafo 3: Por qué vale la pena verlo completo y qué se lleva el espectador.
-Máximo 100 palabras por párrafo. Sé directo y útil.`;
+• Párrafo 1: De qué trata el video y cuál es la premisa central.
+• Párrafo 2: Los puntos, frameworks o tácticas más concretos que se explican.
+• Párrafo 3: Por qué vale la pena verlo completo y qué se lleva el espectador.
+Máximo 100 palabras por párrafo. Sé directo y útil. Responde SOLO los 3 párrafos.`;
 
     for (const model of [
       '@cf/meta/llama-3.1-8b-instruct',
@@ -110,7 +67,7 @@ Máximo 100 palabras por párrafo. Sé directo y útil.`;
       try {
         const res = await env.AI.run(model, {
           messages: [
-            { role: 'system', content: 'Eres un curador de contenido. Respondes en español con párrafos densos y útiles. Sin encabezados.' },
+            { role: 'system', content: 'Eres un curador de contenido educativo. Respondes en español con párrafos útiles y concretos. Sin encabezados.' },
             { role: 'user',   content: prompt },
           ],
           max_tokens:  700,
@@ -118,7 +75,7 @@ Máximo 100 palabras por párrafo. Sé directo y útil.`;
         });
         const synopsis = (res?.response ?? '').trim();
         if (synopsis.length > 80)
-          return jsonOk({ synopsis, lang: captionLang });
+          return jsonOk({ synopsis, source: sourceLabel });
       } catch { continue; }
     }
 
@@ -129,21 +86,67 @@ Máximo 100 palabras por párrafo. Sé directo y útil.`;
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Fetch subtítulos via timedtext (sin auth, solo ASR disponibles públicamente) ──
+async function fetchTranscript(videoId) {
+  const langs = ['es', 'es-419', 'es-MX', 'en', 'en-US', 'en-GB'];
+  for (const lang of langs) {
+    for (const kind of ['', '&kind=asr']) {
+      try {
+        const url = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${lang}${kind}&fmt=vtt`;
+        const res = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible)',
+            'Accept-Language': 'es-MX,es;q=0.9,en;q=0.8',
+          },
+        });
+        if (!res.ok) continue;
+        const text = await res.text();
+        if (text.length < 80 || text.startsWith('<!')) continue;
+        // Parsear VTT o XML según lo que devuelva
+        return parseSubtitles(text);
+      } catch { continue; }
+    }
+  }
+  return null;
+}
 
-function parseTranscriptXml(xml) {
-  return (xml.match(/<text[^>]*>([\s\S]*?)<\/text>/g) ?? [])
-    .map(tag =>
-      tag.replace(/<text[^>]*>/, '').replace('</text>', '')
-        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-        .replace(/<[^>]+>/g, '').trim()
+// ── Fetch descripción completa vía YouTube Data API ───────────────────────────
+async function fetchDescription(apiKey, videoId) {
+  try {
+    const res = await fetch(
+      `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=snippet&key=${apiKey}`
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.items?.[0]?.snippet?.description ?? null;
+  } catch { return null; }
+}
+
+// ── Parsear subtítulos VTT o XML → texto plano ────────────────────────────────
+function parseSubtitles(raw) {
+  // VTT format
+  if (raw.includes('WEBVTT') || raw.includes('-->')) {
+    return raw
+      .split('\n')
+      .filter(l => !l.includes('-->') && !l.match(/^\d+$/) && !l.startsWith('WEBVTT') && l.trim())
+      .map(l => l.replace(/<[^>]+>/g, '').trim())
+      .filter(Boolean)
+      .join(' ');
+  }
+  // XML format
+  return (raw.match(/<text[^>]*>([\s\S]*?)<\/text>/g) ?? [])
+    .map(t =>
+      t.replace(/<text[^>]*>/, '').replace('</text>', '')
+       .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+       .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+       .replace(/<[^>]+>/g, '').trim()
     )
     .filter(Boolean)
     .join(' ');
 }
 
-function sampleTranscript(text, maxChars) {
+// ── Muestra representativa del texto (inicio + medio + final) ─────────────────
+function sampleText(text, maxChars) {
   if (text.length <= maxChars) return text;
   const third = Math.floor(maxChars / 3);
   const mid   = Math.floor(text.length / 2);
@@ -154,5 +157,5 @@ function sampleTranscript(text, maxChars) {
   ].join('\n\n[...]\n\n');
 }
 
-function jsonOk(d)       { return new Response(JSON.stringify(d),           { headers: { 'Content-Type': 'application/json', ...CORS } }); }
-function jsonError(m, s) { return new Response(JSON.stringify({ error: m }), { status: s, headers: { 'Content-Type': 'application/json', ...CORS } }); }
+function jsonOk(d)        { return new Response(JSON.stringify(d),            { headers: { 'Content-Type': 'application/json', ...CORS } }); }
+function jsonError(m, s)  { return new Response(JSON.stringify({ error: m }), { status: s, headers: { 'Content-Type': 'application/json', ...CORS } }); }
