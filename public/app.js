@@ -5,7 +5,7 @@
 
 import {
   auth, db, googleProvider,
-  signInWithPopup, signInWithRedirect, getRedirectResult,
+  signInWithRedirect, getRedirectResult,
   onAuthStateChanged, signOut,
   doc, getDoc, setDoc, updateDoc, serverTimestamp,
 } from './firebase-config.js';
@@ -63,64 +63,20 @@ function showScreen(id) {
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
+// Login: SOLO signInWithRedirect (sin popup, sin fallbacks, sin complejidad).
+// El botón redirige a Google → Google devuelve al usuario → onAuthStateChanged maneja todo.
 
-// Errores de popup que deben fallback a redirect
-const POPUP_ERRORS = new Set([
-  'auth/popup-blocked',
-  'auth/popup-closed-by-user',
-  'auth/cancelled-popup-request',
-  'auth/operation-not-supported-in-this-environment',
-  'auth/web-storage-unsupported',
-  'auth/unauthorized-domain',
-]);
-
-$('btn-google-login').addEventListener('click', async () => {
-  const btn=$('btn-google-login'), errEl=$('login-error');
-  errEl.classList.add('hidden');
+$('btn-google-login').addEventListener('click', () => {
+  const btn = $('btn-google-login');
   btn.disabled = true;
-  btn.querySelector('svg')?.nextSibling && (btn.lastChild.textContent = ' Conectando…');
-
-  try {
-    // Intenta popup primero (mejor UX en desktop)
-    await signInWithPopup(auth, googleProvider);
-    logger.info('Auth: login con popup exitoso');
-  } catch(err) {
-    if (POPUP_ERRORS.has(err.code)) {
-      // Popup bloqueado o cerrado → redirigir a Google directamente
-      logger.warn('Popup bloqueado/cerrado, usando redirect', { code: err.code });
-      try {
-        await signInWithRedirect(auth, googleProvider);
-        // La página se redirige a Google, no continúa desde aquí
-      } catch(redirectErr) {
-        errEl.textContent = `Error al iniciar sesión: ${redirectErr.message}`;
-        errEl.classList.remove('hidden');
-        btn.disabled = false;
-      }
-    } else {
-      errEl.textContent = `Error al iniciar sesión: ${err.message}`;
-      errEl.classList.remove('hidden');
-      btn.disabled = false;
-    }
-  }
+  btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin .7s linear infinite"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Conectando con Google…`;
+  signInWithRedirect(auth, googleProvider);
 });
 
-$('btn-logout').addEventListener('click', () => signOut(auth));
-
-// Verificar resultado de redirect al cargar la página
-// (cuando el usuario regresa de Google después de signInWithRedirect)
-getRedirectResult(auth)
-  .then(result => {
-    if (result?.user) {
-      logger.info('Auth: login con redirect completado', { uid: result.user.uid?.slice(0,8) });
-    }
-  })
-  .catch(err => {
-    logger.error('getRedirectResult error', { msg: err.message });
-    // No mostramos error aquí — onAuthStateChanged maneja el estado
-  });
-
-// onAuthStateChanged se registra al final del módulo para garantizar
-// que todos los const del módulo están inicializados.
+// Logout
+document.addEventListener('click', e => {
+  if (e.target.closest('#btn-logout')) signOut(auth);
+});
 
 async function getToken() {
   if (!state.user) throw new Error('No hay usuario autenticado');
@@ -952,36 +908,37 @@ function applyProfileToState(profile){
 }
 
 // ── Inicialización final ──────────────────────────────────────────────────────
-// Todo el wiring de event listeners y el registro de onAuthStateChanged
-// se hace aquí, después de que TODOS los const del módulo están inicializados.
 updateWeightsSum();
 wireKeywordsUI();
 
-// Registrar onAuthStateChanged aquí garantiza que cuando el callback se
-// ejecute (siempre async), todos los const ya están inicializados.
+// getRedirectResult: completa el flujo cuando el usuario regresa de Google.
+// No necesita hacer nada especial — onAuthStateChanged recibirá al usuario automáticamente.
+getRedirectResult(auth).catch(err => {
+  if (err.code !== 'auth/no-auth-event') {
+    logger.error('getRedirectResult falló', { code: err.code, msg: err.message });
+    const errEl = $('login-error');
+    if (errEl) { errEl.textContent = `Error al autenticar: ${err.message}`; errEl.classList.remove('hidden'); }
+  }
+});
+
+// onAuthStateChanged: ÚNICA fuente de verdad del estado de autenticación.
+// Declarado aquí (al final) para garantizar que todos los const están inicializados.
 onAuthStateChanged(auth, async user => {
   state.user = user;
+
   if (!user) {
     Object.assign(state, { userProfile:null, idToken:null, feedback:{}, lists:[], listItems:{} });
-    logger.info('Auth: sesión cerrada');
     showScreen('screen-login');
     return;
   }
-  logger.info('Auth: usuario autenticado', { uid: user.uid?.slice(0,8) });
 
-  // Cualquier error durante la carga del perfil redirige a onboarding,
-  // NUNCA muestra un error técnico en la pantalla de login.
+  // Cargar perfil del usuario — cualquier error va a onboarding, nunca al login
   try {
     state.idToken = await user.getIdToken();
 
     let snap = null;
-    try {
-      snap = await getDoc(doc(db, 'users', user.uid));
-    } catch(fsErr) {
-      logger.warn('Firestore no disponible, mostrando onboarding', { msg: fsErr.message });
-      showScreen('screen-onboard');
-      return;
-    }
+    try { snap = await getDoc(doc(db, 'users', user.uid)); }
+    catch { showScreen('screen-onboard'); return; }
 
     if (!snap.exists() || !snap.data()?.interest_keywords?.length) {
       showScreen('screen-onboard');
@@ -991,11 +948,9 @@ onAuthStateChanged(auth, async user => {
       renderListsBadge();
       loadVideos(true);
     }
-  } catch(err) {
-    logger.error('Error en onAuthStateChanged', { msg: err.message, stack: err.stack?.slice(0,200) });
-    // No mostramos errores técnicos al usuario — lo mandamos a onboarding
+  } catch {
     showScreen('screen-onboard');
   }
 });
 
-logger.info('App inicializada', { ua: navigator.userAgent.slice(0,50) });
+logger.info('App lista');

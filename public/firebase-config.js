@@ -5,7 +5,7 @@
  */
 
 import { initializeApp }          from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
+import { getAuth, GoogleAuthProvider, signInWithRedirect,
          getRedirectResult, onAuthStateChanged, signOut }
                                    from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, updateDoc, serverTimestamp }
@@ -28,7 +28,6 @@ export const db             = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
 
 export {
-  signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
   onAuthStateChanged,
