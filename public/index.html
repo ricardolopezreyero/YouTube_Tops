@@ -464,7 +464,13 @@
           <p  id="synopsis-modal-channel" class="synopsis-modal-channel"></p>
 
           <div id="synopsis-modal-loading" class="synopsis-modal-loading hidden">
-            <div class="spinner"></div><span>Generando sinopsis…</span>
+            <div class="synopsis-loading-header">
+              <span>Generando sinopsis…</span>
+              <span id="synopsis-progress-pct" class="synopsis-progress-pct">0%</span>
+            </div>
+            <div class="synopsis-progress-track">
+              <div id="synopsis-progress-bar" class="synopsis-progress-bar"></div>
+            </div>
           </div>
           <div id="synopsis-modal-text" class="synopsis-modal-text"></div>
           <p  id="synopsis-modal-error" class="synopsis-error hidden"></p>

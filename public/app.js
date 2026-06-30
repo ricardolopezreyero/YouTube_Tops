@@ -916,36 +916,68 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
 }
 
 // ── Modal de Sinopsis ─────────────────────────────────────────────────────────
-let _synopsisModalContext = null; // { videoId, data, listId }
+let _synopsisModalContext = null;
+let _progressTimer        = null;
 
 function openSynopsisModal(videoId, data, listId) {
   _synopsisModalContext = { videoId, data, listId };
 
-  // Rellenar thumbnail
   const thumb = $('synopsis-modal-thumb');
   if (data.thumbnail_url) { thumb.src = data.thumbnail_url; thumb.alt = data.title; }
 
-  // Rellenar título, canal, links
   $('synopsis-modal-title').textContent   = data.title;
   $('synopsis-modal-channel').textContent = data.channel_title;
   $('synopsis-watch-link').href           = data.url;
   $('synopsis-modal-link').href           = data.url;
 
-  // Limpiar área de texto
-  $('synopsis-modal-text').innerHTML  = '';
+  $('synopsis-modal-text').innerHTML = '';
   $('synopsis-modal-error').classList.add('hidden');
   $('synopsis-modal-loading').classList.add('hidden');
 
-  // Si ya hay sinopsis guardada → mostrar directo
   if (data.synopsis) {
     $('synopsis-modal-text').innerHTML = synopsisToHtml(data.synopsis);
   } else {
-    // Mostrar spinner y generar
     $('synopsis-modal-loading').classList.remove('hidden');
+    resetProgressBar();
     generateSynopsisForModal(videoId, data, listId);
   }
 
   $('modal-synopsis').classList.remove('hidden');
+}
+
+// ── Barra de progreso ─────────────────────────────────────────────────────────
+const PROGRESS_DURATION = 60_000; // 60 segundos
+
+function resetProgressBar() {
+  clearInterval(_progressTimer);
+  const bar = $('synopsis-progress-bar');
+  const pct = $('synopsis-progress-pct');
+  bar.style.transition = 'none';
+  bar.style.width      = '0%';
+  pct.textContent      = '0%';
+
+  const start = Date.now();
+  _progressTimer = setInterval(() => {
+    const elapsed  = Date.now() - start;
+    // Easing: rápido al inicio, lento al final — nunca llega a 100 solo
+    const raw      = Math.min(elapsed / PROGRESS_DURATION, 1);
+    const eased    = 1 - Math.pow(1 - raw, 2.5); // ease-out power
+    const value    = Math.min(Math.floor(eased * 95), 95); // tope en 95%
+    bar.style.transition = 'width .25s ease';
+    bar.style.width      = `${value}%`;
+    pct.textContent      = `${value}%`;
+    if (elapsed >= PROGRESS_DURATION) clearInterval(_progressTimer);
+  }, 250);
+}
+
+function completeProgressBar() {
+  clearInterval(_progressTimer);
+  _progressTimer = null;
+  const bar = $('synopsis-progress-bar');
+  const pct = $('synopsis-progress-pct');
+  bar.style.transition = 'width .35s ease';
+  bar.style.width      = '100%';
+  pct.textContent      = '100%';
 }
 
 async function generateSynopsisForModal(videoId, data, listId) {
@@ -956,6 +988,9 @@ async function generateSynopsisForModal(videoId, data, listId) {
       body: JSON.stringify({ videoId, title: data.title }),
     });
 
+    // Completar la barra al 100%, esperar 350ms para que se vea
+    completeProgressBar();
+    await new Promise(r => setTimeout(r, 380));
     $('synopsis-modal-loading').classList.add('hidden');
 
     if (error && !synopsis) {
