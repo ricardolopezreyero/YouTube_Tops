@@ -10,6 +10,11 @@ import {
 } from './firebase-config.js';
 import { logger } from './logger.js';
 
+// ── Constantes globales (declaradas primero para evitar TDZ) ─────────────────
+// IMPORTANTE: estas const deben ir ANTES de cualquier función que las referencie
+// en un closure, sin importar cuándo se llame esa función.
+const WEIGHT_KEYS = ['engagement', 'relevance', 'depth', 'duration', 'captions', 'authority'];
+
 // ── Utilidades ────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 function esc(str) {
@@ -338,7 +343,6 @@ const paramsPanel=$('params-panel'), btnParams=$('btn-params'), weightsSum=$('we
 btnParams.addEventListener('click',()=>{ const h=paramsPanel.classList.contains('hidden'); paramsPanel.classList.toggle('hidden',!h); btnParams.setAttribute('aria-expanded',String(h)); closeListsPanel(); });
 $('btn-close-params').addEventListener('click',()=>{ paramsPanel.classList.add('hidden'); btnParams.setAttribute('aria-expanded','false'); });
 
-const WEIGHT_KEYS=['engagement','relevance','depth','duration','captions','authority'];
 WEIGHT_KEYS.forEach(key=>{
   const s=$(`w-${key}`),o=$(`w-${key}-val`);
   s.addEventListener('input',()=>{ state.weights[key]=parseInt(s.value); o.textContent=s.value; updateWeightsSum(); });
