@@ -8,6 +8,7 @@ import {
   signInWithPopup, onAuthStateChanged, signOut,
   doc, getDoc, setDoc, updateDoc, serverTimestamp,
 } from './firebase-config.js';
+import { logger } from './logger.js';
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -69,8 +70,10 @@ onAuthStateChanged(auth, async user => {
   state.user = user;
   if (!user) {
     Object.assign(state, { userProfile:null, idToken:null, feedback:{}, lists:[], listItems:{} });
+    logger.info('Auth: sesión cerrada');
     showScreen('screen-login'); return;
   }
+  logger.info('Auth: usuario autenticado', { uid: user.uid?.slice(0,8) });
   try {
     state.idToken = await user.getIdToken();
     let snap=null;
@@ -96,6 +99,25 @@ async function getToken() {
   if (!state.user) throw new Error('No hay usuario autenticado');
   state.idToken = await state.user.getIdToken(false);
   return state.idToken;
+}
+
+async function apiFetch(url, opts = {}) {
+  const t = logger.time(url);
+  try {
+    const token = await getToken();
+    const res = await fetch(url, {
+      ...opts,
+      headers: { 'Authorization': `Bearer ${token}`, ...(opts.headers || {}) },
+    });
+    const data = await res.json();
+    if (!res.ok) throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { status: res.status });
+    t.end({ status: res.status });
+    return data;
+  } catch (err) {
+    t.end({ error: err.message });
+    logger.error(`apiFetch ${url}`, { message: err.message, status: err.status });
+    throw err;
+  }
 }
 
 async function saveProfile(data) {
@@ -307,7 +329,9 @@ function wireKeywordsUI() {
     }
   });
 }
-wireKeywordsUI();
+// wireKeywordsUI() se llama al final del módulo, después de que todos los
+// const (WEIGHT_KEYS, btnParams, etc.) estén inicializados. Moverlo aquí
+// causaría un TDZ (Temporal Dead Zone) por const no hoisted.
 
 // ── Parámetros ────────────────────────────────────────────────────────────────
 const paramsPanel=$('params-panel'), btnParams=$('btn-params'), weightsSum=$('weights-sum');
@@ -764,12 +788,14 @@ async function loadVideos(reset=false){
   try {
     const token=await getToken();
     const params=new URLSearchParams({offset:String(state.offset),limit:'20',weights:JSON.stringify(state.weights),keywords:JSON.stringify(state.keywords)});
+    const t=logger.time('/api/videos');
     const res=await fetch(`/api/videos?${params}`,{headers:{'Authorization':`Bearer ${token}`}});
     if(!res.ok){
-      if(res.status===401){ await signOut(auth); return; }
+      if(res.status===401){ logger.warn('401 en /api/videos, cerrando sesión'); await signOut(auth); return; }
       const d=await res.json().catch(()=>({})); throw new Error(d.error||`Error ${res.status}`);
     }
     const { videos, total, hasMore }=await res.json();
+    t.end({ returned: videos.length, total, offset: state.offset });
     state.hasMore=hasMore; state.offset+=videos.length; state.rawVideos.push(...videos);
     const adjusted=applyFeedback(videos);
     if(reset&&total===0){ showEmpty(); return; }
@@ -899,4 +925,10 @@ function applyProfileToState(profile){
   }
 }
 
+// ── Inicialización final ──────────────────────────────────────────────────────
+// IMPORTANTE: wireKeywordsUI() se llama AQUÍ, después de que todos los
+// `const` del módulo (WEIGHT_KEYS, btnParams, etc.) estén inicializados.
+// Llamarla antes causa TDZ (Temporal Dead Zone) crash en los closures.
 updateWeightsSum();
+wireKeywordsUI();
+logger.info('App inicializada', { ua: navigator.userAgent.slice(0,50) });
