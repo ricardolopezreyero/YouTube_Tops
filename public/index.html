@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Los mejores videos de YouTube según tu perfil. Sin el algoritmo de retención.">
+  <title>YouTube Tops</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
+</head>
+<body>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       PANTALLA 1: Login
+  ══════════════════════════════════════════════════════════════ -->
+  <div id="screen-login" class="screen active" role="main" aria-label="Inicio de sesión">
+    <div class="login-card">
+      <div class="login-logo" aria-hidden="true">🎯</div>
+      <h1>YouTube <span class="accent">Tops</span></h1>
+      <p class="tagline">Los mejores videos según tu perfil.<br>Sin el algoritmo de retención.</p>
+
+      <button id="btn-google-login" class="btn-google" type="button">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+        </svg>
+        Continuar con Google
+      </button>
+
+      <p id="login-error" class="error-msg hidden" role="alert"></p>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       PANTALLA 2: Onboarding (primer ingreso)
+  ══════════════════════════════════════════════════════════════ -->
+  <div id="screen-onboard" class="screen" role="main" aria-label="Configuración inicial">
+    <div class="onboard-card">
+      <div class="onboard-header">
+        <span class="onboard-logo" aria-hidden="true">🎯</span>
+        <h2>Cuéntanos sobre ti</h2>
+      </div>
+
+      <p class="hint">
+        ¿A qué te dedicas? ¿Qué quieres aprender? ¿Qué contenido odias?<br>
+        <span class="hint-sub">La IA derivará tus semillas y keywords automáticamente.</span>
+      </p>
+
+      <textarea
+        id="description-input"
+        rows="6"
+        maxlength="1500"
+        placeholder="Ejemplo: Soy consultor de marketing B2B, quiero aprender sobre generación de leads, ventas SaaS y copywriting. Me interesa el desarrollo personal y la productividad. Odio los videos de entretenimiento vacío, shorts de 60 segundos y clickbait..."
+        aria-label="Tu descripción"
+      ></textarea>
+
+      <div class="char-counter"><span id="char-count">0</span>/1500</div>
+
+      <button id="btn-save-profile" class="btn-primary" type="button">
+        <span class="btn-label">Generar mi perfil →</span>
+        <span class="btn-spinner hidden" aria-hidden="true"></span>
+      </button>
+
+      <p id="onboard-error" class="error-msg hidden" role="alert"></p>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       PANTALLA 3: App principal
+  ══════════════════════════════════════════════════════════════ -->
+  <div id="screen-app" class="screen" role="main" aria-label="Videos recomendados">
+
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <span aria-hidden="true">🎯</span>
+        <span class="brand-name">YouTube Tops</span>
+      </div>
+      <nav class="header-actions">
+        <button id="btn-params" class="btn-icon" type="button" title="Ajustar parámetros" aria-expanded="false" aria-controls="params-panel">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41"/>
+          </svg>
+          Parámetros
+        </button>
+        <button id="btn-logout" class="btn-icon btn-icon--user" type="button" title="Cuenta">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+        </button>
+      </nav>
+    </header>
+
+    <!-- Panel de parámetros (colapsable) -->
+    <aside id="params-panel" class="params-panel hidden" aria-label="Panel de parámetros">
+      <div class="params-inner">
+        <h3>Parámetros de ranking</h3>
+
+        <!-- Pesos -->
+        <section class="params-section">
+          <div class="params-section-header">
+            <h4>Pesos del score</h4>
+            <span id="weights-sum" class="badge badge--ok">Σ = 100</span>
+          </div>
+
+          <div class="slider-row">
+            <label for="w-engagement">Engagement</label>
+            <input type="range" id="w-engagement" min="0" max="70" value="35">
+            <output id="w-engagement-val" for="w-engagement">35</output><span>%</span>
+          </div>
+          <div class="slider-row">
+            <label for="w-relevance">Relevancia</label>
+            <input type="range" id="w-relevance" min="0" max="70" value="25">
+            <output id="w-relevance-val" for="w-relevance">25</output><span>%</span>
+          </div>
+          <div class="slider-row">
+            <label for="w-depth">Profundidad</label>
+            <input type="range" id="w-depth" min="0" max="50" value="15">
+            <output id="w-depth-val" for="w-depth">15</output><span>%</span>
+          </div>
+          <div class="slider-row">
+            <label for="w-duration">Duración</label>
+            <input type="range" id="w-duration" min="0" max="40" value="10">
+            <output id="w-duration-val" for="w-duration">10</output><span>%</span>
+          </div>
+          <div class="slider-row">
+            <label for="w-captions">Subtítulos</label>
+            <input type="range" id="w-captions" min="0" max="30" value="5">
+            <output id="w-captions-val" for="w-captions">5</output><span>%</span>
+          </div>
+          <div class="slider-row">
+            <label for="w-authority">Autoridad</label>
+            <input type="range" id="w-authority" min="0" max="40" value="10">
+            <output id="w-authority-val" for="w-authority">10</output><span>%</span>
+          </div>
+        </section>
+
+        <!-- Duración de video -->
+        <section class="params-section">
+          <h4>Duración de video</h4>
+          <div class="slider-row">
+            <label for="dur-min">Mínimo</label>
+            <input type="range" id="dur-min" min="1" max="30" value="8">
+            <output id="dur-min-val" for="dur-min">8</output><span>min</span>
+          </div>
+          <div class="slider-row">
+            <label for="dur-max">Máximo</label>
+            <input type="range" id="dur-max" min="10" max="180" value="60">
+            <output id="dur-max-val" for="dur-max">60</output><span>min</span>
+          </div>
+        </section>
+
+        <!-- Modo -->
+        <section class="params-section">
+          <h4>Modo</h4>
+          <select id="mode-select" aria-label="Modo de ranking">
+            <option value="balanced">Balanceado (default)</option>
+            <option value="depth">Profundidad máxima</option>
+            <option value="quick">Quick wins (&lt;15 min)</option>
+          </select>
+        </section>
+
+        <div class="params-actions">
+          <button id="btn-apply-params" class="btn-primary" type="button">Aplicar y re-rankear</button>
+          <button id="btn-edit-profile" class="btn-secondary" type="button">Editar mi perfil</button>
+          <button id="btn-close-params" class="btn-ghost" type="button">Cerrar</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Área de videos -->
+    <div class="videos-wrapper">
+
+      <!-- Video destacado (joya #1) -->
+      <div id="featured-section" class="featured-section hidden" aria-label="Joya destacada"></div>
+
+      <!-- Grid de videos -->
+      <div id="videos-grid" class="videos-grid" role="list" aria-label="Lista de videos"></div>
+
+      <!-- Indicadores de estado -->
+      <div id="loading" class="state-msg hidden" role="status" aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <span>Cargando joyas…</span>
+      </div>
+
+      <div id="empty-state" class="state-msg state-msg--empty hidden" role="status">
+        <p class="state-icon" aria-hidden="true">🌵</p>
+        <p><strong>El corpus está vacío.</strong></p>
+        <p>Corre <code>npm run seed</code> una vez para poblar la base de datos con los primeros videos.</p>
+      </div>
+
+      <div id="error-state" class="state-msg state-msg--error hidden" role="alert">
+        <p class="state-icon" aria-hidden="true">⚠️</p>
+        <p id="error-state-msg"></p>
+        <button id="btn-retry" class="btn-secondary" type="button">Reintentar</button>
+      </div>
+
+      <!-- Botón cargar más -->
+      <div id="load-more-area" class="load-more-area hidden">
+        <button id="btn-load-more" class="btn-secondary" type="button">Cargar más</button>
+      </div>
+    </div>
+
+  </div><!-- /#screen-app -->
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

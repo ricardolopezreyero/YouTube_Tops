@@ -1,0 +1,20 @@
+{
+  "name": "youtube-tops",
+  "version": "1.0.0",
+  "description": "Los mejores videos de YouTube según tu perfil, sin el algoritmo de retención.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler pages dev public --compatibility-date=2025-01-01",
+    "deploy": "wrangler pages deploy public --project-name=youtube-tops",
+    "db:migrate": "wrangler d1 migrations apply youtube_tops --remote",
+    "db:migrate:local": "wrangler d1 migrations apply youtube_tops --local",
+    "seed": "node scripts/seed.js",
+    "cf:login": "wrangler login"
+  },
+  "devDependencies": {
+    "wrangler": "^3.101.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
