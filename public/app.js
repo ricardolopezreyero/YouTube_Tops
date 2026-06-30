@@ -1,8 +1,8 @@
 /**
  * app.js – YouTube Tops · sin autenticación · RLR · EYE·181218
  *
- * Perfil guardado en localStorage (clave: yt_tops_profile).
- * Backend sin tokens — fetch directo.
+ * Perfil único guardado en Cloudflare KV vía /api/profile.
+ * Mismo perfil en cualquier dispositivo — sin localStorage, sin tokens.
  *
  * REGLA TDZ: todos los const ANTES de cualquier addEventListener.
  */
@@ -11,7 +11,6 @@ import { logger } from './logger.js';
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 const WEIGHT_KEYS   = ['engagement', 'relevance', 'depth', 'duration', 'captions', 'authority'];
-const PROFILE_KEY   = 'yt_tops_profile';
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -42,25 +41,12 @@ function showToast(msg, ms = 2500) {
   setTimeout(() => t.classList.add('hidden'), ms);
 }
 
-// ── localStorage ──────────────────────────────────────────────────────────────
-function loadProfile() {
-  try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null'); }
-  catch { return null; }
-}
-function saveProfileLocal(data) {
-  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(data)); }
-  catch (e) { console.warn('saveProfileLocal:', e.message); }
-}
-function patchProfile(patch) {
-  const p = loadProfile() || {};
-  saveProfileLocal({ ...p, ...patch });
-}
-
 // ── Estado global ─────────────────────────────────────────────────────────────
 const state = {
   rawVideos: [], offset: 0, hasMore: false, loading: false,
   weights:   { engagement: 35, relevance: 25, depth: 15, duration: 10, captions: 5, authority: 10 },
   keywords:  [],
+  description: '', derivedSeeds: [],
   durMin: 8, durMax: 60, mode: 'balanced',
   feedback:  {},
   lists:     [],
@@ -69,6 +55,31 @@ const state = {
   activeDurFilter: 'all', onlyNew: false,
   sessionMinutes: 45,
 };
+
+// ── Perfil remoto (Cloudflare KV vía /api/profile) ────────────────────────────
+// Mismo perfil en cualquier dispositivo — sin localStorage, sin login.
+async function fetchProfile() {
+  try { return await apiFetch('/api/profile'); }
+  catch (e) { console.warn('fetchProfile:', e.message); return {}; }
+}
+function buildProfilePayload() {
+  return {
+    description:       state.description,
+    derived_seeds:      state.derivedSeeds,
+    interest_keywords: state.keywords,
+    weights:            { ...state.weights },
+    settings:           { mode: state.mode, duration_min: state.durMin, duration_max: state.durMax },
+    feedback:           state.feedback,
+    lists:               state.lists,
+    listItems:          state.listItems,
+  };
+}
+function persistProfile() {
+  apiFetch('/api/profile', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(buildProfilePayload()),
+  }).catch(e => console.warn('persistProfile:', e.message));
+}
 
 // ── Pantallas ─────────────────────────────────────────────────────────────────
 function showScreen(id) {
@@ -126,17 +137,13 @@ $('btn-save-profile').addEventListener('click', async () => {
     const newLists = (suggested_lists || ['Ver después', 'Favoritos', 'Comparte esto'])
       .map((name, i) => ({ id: uid(), name, order: i, created_at: new Date().toISOString() }));
 
-    state.keywords  = keywords;
-    state.lists     = newLists;
-    state.listItems = {};
+    state.description   = description;
+    state.derivedSeeds  = seeds;
+    state.keywords      = keywords;
+    state.lists         = newLists;
+    state.listItems     = {};
     newLists.forEach(l => { state.listItems[l.id] = {}; });
-
-    saveProfileLocal({
-      description, derived_seeds: seeds, interest_keywords: keywords,
-      weights: { ...state.weights },
-      settings: { mode: state.mode, duration_min: state.durMin, duration_max: state.durMax },
-      feedback: state.feedback, lists: state.lists, listItems: state.listItems,
-    });
+    persistProfile();
 
     showScreen('screen-app');
     renderListsBadge();
@@ -155,7 +162,7 @@ function trackClick(videoId) {
   const badge = $(`clk-${CSS.escape(videoId)}`);
   const c     = state.feedback[videoId].clicks;
   if (badge) { badge.textContent = `${c} clic${c > 1 ? 's' : ''}`; badge.classList.remove('hidden'); }
-  patchProfile({ feedback: state.feedback });
+  persistProfile();
 }
 
 function dismissVideo(videoId) {
@@ -167,7 +174,7 @@ function dismissVideo(videoId) {
     card.style.opacity = '0'; card.style.transform = 'scale(0.9)';
     setTimeout(() => card.remove(), 230);
   }
-  patchProfile({ feedback: state.feedback });
+  persistProfile();
 }
 
 function applyFeedback(videos) {
@@ -304,7 +311,7 @@ function renderKeywordChips() {
     chip.innerHTML = `${esc(kw)}<button class="kw-chip-remove" title="Quitar">×</button>`;
     chip.querySelector('.kw-chip-remove').addEventListener('click', () => {
       state.keywords = state.keywords.filter(k => k !== kw);
-      patchProfile({ interest_keywords: state.keywords });
+      persistProfile();
       renderKeywordChips();
     });
     container.appendChild(chip);
@@ -316,7 +323,7 @@ function addKeyword(raw) {
   const kw = raw.trim().toLowerCase();
   if (!kw || state.keywords.map(k => k.toLowerCase()).includes(kw)) return false;
   state.keywords.push(kw);
-  patchProfile({ interest_keywords: state.keywords });
+  persistProfile();
   renderKeywordChips();
   return true;
 }
@@ -404,9 +411,8 @@ btnParams.addEventListener('click', () => {
   btnParams.setAttribute('aria-expanded', String(h));
   closeListsPanel();
   if (h) {
-    const p = loadProfile();
     const inline = $('profile-desc-inline');
-    if (inline && p?.description) inline.value = p.description;
+    if (inline && state.description) inline.value = state.description;
     renderKeywordChips();
     $('kw-suggestions-wrap')?.classList.add('hidden');
   }
@@ -427,8 +433,10 @@ $('btn-update-profile').addEventListener('click', async () => {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ description }),
     });
-    state.keywords = keywords;
-    patchProfile({ description, derived_seeds: seeds, interest_keywords: keywords });
+    state.description  = description;
+    state.derivedSeeds = seeds;
+    state.keywords      = keywords;
+    persistProfile();
     renderKeywordChips();
     okEl.classList.remove('hidden'); setTimeout(() => okEl.classList.add('hidden'), 3000);
     loadVideos(true);
@@ -477,7 +485,7 @@ function applyModePreset(mode) {
 }
 
 $('btn-apply-params').addEventListener('click', () => {
-  patchProfile({ weights: { ...state.weights }, settings: { mode: state.mode, duration_min: state.durMin, duration_max: state.durMax } });
+  persistProfile();
   paramsPanel.classList.add('hidden'); btnParams.setAttribute('aria-expanded', 'false');
   loadVideos(true);
 });
@@ -538,7 +546,7 @@ function renameList(listId) {
   if (!name?.trim() || name.trim() === list.name) return;
   list.name = name.trim(); persistLists(); $('list-view-name').textContent = list.name; showToast('Lista renombrada');
 }
-function persistLists() { patchProfile({ lists: state.lists, listItems: state.listItems }); }
+function persistLists() { persistProfile(); }
 
 // ── Vista de Lista ────────────────────────────────────────────────────────────
 function showListView(listId) {
@@ -848,6 +856,8 @@ function showError(msg) { $('error-state-msg').textContent = msg; $('error-state
 // ── Aplicar perfil al estado ──────────────────────────────────────────────────
 function applyProfileToState(p) {
   if (!p) return;
+  if (p.description)  state.description  = p.description;
+  if (p.derived_seeds) state.derivedSeeds = p.derived_seeds;
   if (p.interest_keywords?.length) { state.keywords = p.interest_keywords; renderKeywordChips(); }
   if (p.feedback)   state.feedback   = p.feedback;
   if (p.lists)      state.lists      = p.lists;
@@ -869,18 +879,19 @@ function applyProfileToState(p) {
   }
 }
 
-// ── Inicio: sin auth, directo desde localStorage ──────────────────────────────
+// ── Inicio: sin auth, perfil sincronizado vía /api/profile (KV) ───────────────
 updateWeightsSum();
 wireKeywordsUI();
 
-const storedProfile = loadProfile();
-if (storedProfile?.interest_keywords?.length) {
-  applyProfileToState(storedProfile);
-  showScreen('screen-app');
-  renderListsBadge();
-  loadVideos(true);
-} else {
-  showScreen('screen-onboard');
-}
-
-logger.info('App lista · sin auth · v2.1');
+(async function init() {
+  const storedProfile = await fetchProfile();
+  if (storedProfile?.interest_keywords?.length) {
+    applyProfileToState(storedProfile);
+    showScreen('screen-app');
+    renderListsBadge();
+    loadVideos(true);
+  } else {
+    showScreen('screen-onboard');
+  }
+  logger.info('App lista · sin auth · perfil sincronizado · v2.2');
+})();
