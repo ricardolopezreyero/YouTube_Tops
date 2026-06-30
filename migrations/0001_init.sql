@@ -59,6 +59,6 @@ CREATE TABLE IF NOT EXISTS quota_log (
 );
 
 -- Índices
-CREATE INDEX IF NOT EXISTS idx_videos_score    ON videos(score_base DESC);
-CREATE INDEX IF NOT EXISTS idx_videos_channel  ON videos(channel_id);
-CREATE INDEX IF NOT EXISTS idx_queue_status    ON search_queue(status, layer);
+CREATE INDEX IF NOT EXISTS idx_videos_score   ON videos(score_base DESC);
+CREATE INDEX IF NOT EXISTS idx_videos_channel ON videos(channel_id);
+CREATE INDEX IF NOT EXISTS idx_queue_status   ON search_queue(status, layer);

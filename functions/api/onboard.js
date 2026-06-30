@@ -1,7 +1,6 @@
 /**
  * POST /api/onboard
  * Auth-protected. Recibe {description} → Workers AI → devuelve {seeds, keywords, suggested_lists}.
- * El cliente guarda en Firestore y crea las listas sugeridas vacías.
  */
 
 import { requireAuth } from '../../src/lib/auth.js';
@@ -27,27 +26,22 @@ export async function onRequestPost(context) {
     catch { return jsonError('Cuerpo no es JSON válido', 400); }
 
     const description = (body?.description || '').trim();
-    if (description.length < 20) return jsonError('La descripción debe tener al menos 20 caracteres', 400);
+    if (description.length < 20)
+      return jsonError('La descripción debe tener al menos 20 caracteres', 400);
 
     const profile = await deriveProfile(env.AI, description);
 
-    return new Response(
-      JSON.stringify({
-        uid:             user.sub,
-        seeds:           profile.seeds,
-        keywords:        profile.keywords,
-        suggested_lists: profile.suggested_lists,
-      }),
-      { headers: { 'Content-Type': 'application/json', ...CORS } },
-    );
+    return jsonOk({ uid: user.sub, ...profile });
   } catch (err) {
     return jsonError(err.message, isAuthError(err) ? 401 : 500);
   }
 }
 
+function jsonOk(data) {
+  return new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json', ...CORS } });
+}
 function jsonError(message, status = 500) {
-  return new Response(JSON.stringify({ error: message }),
-    { status, headers: { 'Content-Type': 'application/json', ...CORS } });
+  return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
 }
 function isAuthError(err) {
   const m = err.message.toLowerCase();

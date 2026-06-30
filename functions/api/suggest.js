@@ -7,7 +7,7 @@
 import { requireAuth } from '../../src/lib/auth.js';
 
 const CORS = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
@@ -20,12 +20,10 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   try {
     await requireAuth(request, env);
-    const body = await request.json().catch(() => ({}));
+    const body     = await request.json().catch(() => ({}));
     const keywords = Array.isArray(body.keywords) ? body.keywords : [];
 
-    if (!keywords.length) {
-      return jsonOk({ suggestions: [] });
-    }
+    if (!keywords.length) return jsonOk({ suggestions: [] });
 
     const prompt = `El usuario tiene estos intereses en YouTube: ${keywords.join(', ')}.
 Sugiere 6-8 temas ADICIONALES específicos que le darían diversidad y profundidad, pero que probablemente no mencionó.
@@ -35,13 +33,13 @@ Responde ÚNICAMENTE con JSON array: ["tema1", "tema2"]. Sin texto extra.`;
     const res = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
       messages: [
         { role: 'system', content: 'Eres un experto en aprendizaje y content curation. Solo respondes JSON arrays de strings.' },
-        { role: 'user', content: prompt },
+        { role: 'user',   content: prompt },
       ],
       max_tokens: 250,
       temperature: 0.6,
     });
 
-    const text = res?.response || '';
+    const text  = res?.response || '';
     const match = text.match(/\[[\s\S]*?\]/);
     let suggestions = [];
     if (match) {
@@ -60,6 +58,6 @@ Responde ÚNICAMENTE con JSON array: ["tema1", "tema2"]. Sin texto extra.`;
   }
 }
 
-function jsonOk(d) { return new Response(JSON.stringify(d), { headers: { 'Content-Type': 'application/json', ...CORS } }); }
-function jsonError(m, s = 500) { return new Response(JSON.stringify({ error: m }), { status: s, headers: { 'Content-Type': 'application/json', ...CORS } }); }
-function isAuthError(e) { const m = e.message.toLowerCase(); return m.includes('token') || m.includes('authorization') || m.includes('expirado'); }
+function jsonOk(d)          { return new Response(JSON.stringify(d), { headers: { 'Content-Type': 'application/json', ...CORS } }); }
+function jsonError(m, s=500){ return new Response(JSON.stringify({ error: m }), { status: s, headers: { 'Content-Type': 'application/json', ...CORS } }); }
+function isAuthError(e)     { const m = e.message.toLowerCase(); return m.includes('token') || m.includes('authorization') || m.includes('expirado'); }

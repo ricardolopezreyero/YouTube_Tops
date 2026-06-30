@@ -1,6 +1,10 @@
 /**
  * app.js – YouTube Tops frontend.
- * Vanilla JS, ES modules.
+ * Vanilla JS, ES modules. RLR · EYE·181218
+ *
+ * REGLA CRÍTICA: todos los const deben declararse ANTES de cualquier
+ * addEventListener que los referencie en un closure. onAuthStateChanged
+ * va al FINAL del módulo para evitar Temporal Dead Zone (TDZ).
  */
 
 import {
@@ -11,31 +15,31 @@ import {
 } from './firebase-config.js';
 import { logger } from './logger.js';
 
-// ── Constantes globales (declaradas primero para evitar TDZ) ─────────────────
-// IMPORTANTE: estas const deben ir ANTES de cualquier función que las referencie
-// en un closure, sin importar cuándo se llame esa función.
+// ── Constantes globales (TDZ-safe: primero que todo) ─────────────────────────
 const WEIGHT_KEYS = ['engagement', 'relevance', 'depth', 'duration', 'captions', 'authority'];
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 function esc(str) {
   return String(str || '').replace(/[&<>"']/g, c =>
-    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
-function pad(n) { return String(n).padStart(2,'0'); }
+function pad(n) { return String(n).padStart(2, '0'); }
 function fmtDuration(s) {
   if (!s) return '?';
-  const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60;
-  return h>0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
 }
 function fmtViews(n) {
   if (!n) return '0';
-  return n>=1_000_000?`${(n/1_000_000).toFixed(1)}M`:n>=1_000?`${(n/1_000).toFixed(0)}K`:String(n);
+  return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M`
+       : n >= 1_000     ? `${(n / 1_000).toFixed(0)}K`
+       : String(n);
 }
-function scoreBadgeClass(s){ return s>=0.6?'score-hi':s>=0.35?'score-mid':'score-lo'; }
-function uid() { return Math.random().toString(36).slice(2,10); }
+function scoreBadgeClass(s) { return s >= 0.6 ? 'score-hi' : s >= 0.35 ? 'score-mid' : 'score-lo'; }
+function uid() { return Math.random().toString(36).slice(2, 10); }
 
-function showToast(msg, duration=2500) {
+function showToast(msg, duration = 2500) {
   const t = $('toast');
   t.textContent = msg;
   t.classList.remove('hidden');
@@ -45,15 +49,22 @@ function showToast(msg, duration=2500) {
 // ── Estado global ─────────────────────────────────────────────────────────────
 const state = {
   user: null, idToken: null, userProfile: null,
-  rawVideos: [], offset: 0, hasMore: false, loading: false,
-  weights: { engagement:35, relevance:25, depth:15, duration:10, captions:5, authority:10 },
-  keywords: [], durMin:8, durMax:60, mode:'balanced',
-  feedback: {},   // { videoId: { clicks, dismissed } }
-  lists: [],      // [{ id, name, order }]
-  listItems: {},  // { listId: { videoId: { order, added_at, title, channel_title, thumbnail_url, url, duration_s, score } } }
-  currentView: 'home',     // 'home' | 'list'
+  rawVideos: [],        // todos los videos cargados (sin filtrar)
+  offset: 0, hasMore: false, loading: false,
+  weights:    { engagement: 35, relevance: 25, depth: 15, duration: 10, captions: 5, authority: 10 },
+  keywords:   [],
+  durMin: 8, durMax: 60, mode: 'balanced',
+  feedback:   {},       // { videoId: { clicks, dismissed } }
+  lists:      [],       // [{ id, name, order }]
+  listItems:  {},       // { listId: { videoId: {...} } }
+  currentView: 'home',
   currentListId: null,
-  pendingAddVideoListId: null, // usado en el modal para saber a qué lista agregar
+  pendingAddVideoListId: null,
+  // filter bar
+  activeDurFilter: 'all',
+  onlyNew: false,
+  // session
+  sessionMinutes: 45,
 };
 
 // ── Pantallas ─────────────────────────────────────────────────────────────────
@@ -68,26 +79,19 @@ $('btn-google-login').addEventListener('click', async () => {
   const errEl = $('login-error');
   errEl.classList.add('hidden');
   btn.disabled = true;
-
   try {
-    // Popup muestra el selector de cuenta de Google
     await signInWithPopup(auth, googleProvider);
-    // onAuthStateChanged se encarga del resto
   } catch (err) {
-    // Si el popup fue bloqueado o cerrado, usar redirect como fallback
-    if (['auth/popup-blocked','auth/popup-closed-by-user','auth/cancelled-popup-request'].includes(err.code)) {
+    if (['auth/popup-blocked', 'auth/popup-closed-by-user', 'auth/cancelled-popup-request'].includes(err.code)) {
       await signInWithRedirect(auth, googleProvider);
-      // La página se redirige — el código de abajo no se ejecuta
       return;
     }
-    // Cualquier otro error: mostrar mensaje y rehabilitar botón
     errEl.textContent = err.message || 'Error al iniciar sesión';
     errEl.classList.remove('hidden');
     btn.disabled = false;
   }
 });
 
-// Logout
 document.addEventListener('click', e => {
   if (e.target.closest('#btn-logout')) signOut(auth);
 });
@@ -102,7 +106,7 @@ async function apiFetch(url, opts = {}) {
   const t = logger.time(url);
   try {
     const token = await getToken();
-    const res = await fetch(url, {
+    const res   = await fetch(url, {
       ...opts,
       headers: { 'Authorization': `Bearer ${token}`, ...(opts.headers || {}) },
     });
@@ -112,31 +116,28 @@ async function apiFetch(url, opts = {}) {
     return data;
   } catch (err) {
     t.end({ error: err.message });
-    logger.error(`apiFetch ${url}`, { message: err.message, status: err.status });
+    logger.error(`apiFetch ${url}`, { message: err.message });
     throw err;
   }
 }
 
 async function saveProfile(data) {
   if (!state.user) return;
-  try { await setDoc(doc(db,'users',state.user.uid), data, { merge:true }); }
-  catch(e) { console.warn('saveProfile:', e.message); }
+  try { await setDoc(doc(db, 'users', state.user.uid), data, { merge: true }); }
+  catch (e) { console.warn('saveProfile:', e.message); }
 }
 
 // ── Onboarding ────────────────────────────────────────────────────────────────
-const descInput=$('description-input'), charCount=$('char-count');
-descInput.addEventListener('input', ()=>{ charCount.textContent=descInput.value.length; });
+const descInput = $('description-input'), charCount = $('char-count');
+descInput.addEventListener('input', () => { charCount.textContent = descInput.value.length; });
 
-// ── Onboarding multi-step ────────────────────────────────────────────────────
 function showOnboardStep(step) {
   document.querySelectorAll('.onboard-step').forEach(s => s.classList.remove('active'));
   $(`onboard-step-${step}`).classList.add('active');
 }
-
 $('btn-onboard-next').addEventListener('click', () => showOnboardStep(2));
 $('btn-onboard-back').addEventListener('click', () => showOnboardStep(1));
 
-// Example chips pre-fill textarea
 document.querySelectorAll('.ob-chip').forEach(chip => {
   chip.addEventListener('click', () => {
     descInput.value = chip.dataset.text;
@@ -146,73 +147,225 @@ document.querySelectorAll('.ob-chip').forEach(chip => {
 });
 
 $('btn-save-profile').addEventListener('click', async () => {
-  const btn=$('btn-save-profile'), errEl=$('onboard-error');
-  const label=btn.querySelector('.btn-label'), spinner=btn.querySelector('.btn-spinner');
+  const btn     = $('btn-save-profile');
+  const errEl   = $('onboard-error');
+  const label   = btn.querySelector('.btn-label');
+  const spinner = btn.querySelector('.btn-spinner');
   errEl.classList.add('hidden');
-  const description=descInput.value.trim();
-  if (description.length<20) { errEl.textContent='Por favor escribe al menos 20 caracteres.'; errEl.classList.remove('hidden'); return; }
-  btn.disabled=true; label.textContent='Procesando…'; spinner.classList.remove('hidden');
+  const description = descInput.value.trim();
+  if (description.length < 20) { errEl.textContent = 'Por favor escribe al menos 20 caracteres.'; errEl.classList.remove('hidden'); return; }
+  btn.disabled = true; label.textContent = 'Procesando…'; spinner.classList.remove('hidden');
   try {
-    const token=await getToken();
-    const res=await fetch('/api/onboard',{method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},
-      body:JSON.stringify({description})});
-    if(!res.ok){ const d=await res.json(); throw new Error(d.error||`Error ${res.status}`); }
-
+    const token = await getToken();
+    const res   = await fetch('/api/onboard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ description }),
+    });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error || `Error ${res.status}`); }
     const { seeds, keywords, suggested_lists } = await res.json();
 
-    // Crear 3 listas sugeridas vacías
-    const newLists = (suggested_lists||['Ver después','Favoritos','Comparte esto']).map((name,i)=>({
-      id: uid(), name, order: i, created_at: new Date().toISOString()
+    const newLists = (suggested_lists || ['Ver después', 'Favoritos', 'Comparte esto']).map((name, i) => ({
+      id: uid(), name, order: i, created_at: new Date().toISOString(),
     }));
-
-    state.keywords = keywords;
-    state.lists    = newLists;
+    state.keywords  = keywords;
+    state.lists     = newLists;
     state.listItems = {};
-    newLists.forEach(l=>{ state.listItems[l.id]={}; });
+    newLists.forEach(l => { state.listItems[l.id] = {}; });
 
     await saveProfile({
-      description, derived_seeds:seeds, interest_keywords:keywords,
-      weights:{...state.weights}, settings:{mode:state.mode,duration_min:state.durMin,duration_max:state.durMax},
-      feedback:state.feedback, lists:state.lists, listItems:state.listItems,
-      updated_at:serverTimestamp()
+      description, derived_seeds: seeds, interest_keywords: keywords,
+      weights: { ...state.weights },
+      settings: { mode: state.mode, duration_min: state.durMin, duration_max: state.durMax },
+      feedback: state.feedback, lists: state.lists, listItems: state.listItems,
+      updated_at: serverTimestamp(),
     });
 
     showScreen('screen-app');
     renderListsBadge();
     loadVideos(true);
-  } catch(err) {
-    errEl.textContent=err.message; errEl.classList.remove('hidden');
+  } catch (err) {
+    errEl.textContent = err.message; errEl.classList.remove('hidden');
   } finally {
-    btn.disabled=false; label.textContent='Generar mi perfil →'; spinner.classList.add('hidden');
+    btn.disabled = false; label.textContent = 'Generar mi perfil →'; spinner.classList.add('hidden');
   }
 });
 
 // ── Feedback ──────────────────────────────────────────────────────────────────
 async function trackClick(videoId) {
-  if (!state.feedback[videoId]) state.feedback[videoId]={clicks:0,dismissed:false};
-  state.feedback[videoId].clicks=(state.feedback[videoId].clicks||0)+1;
-  const badge=$(`clk-${CSS.escape(videoId)}`);
-  if(badge){ badge.textContent=`${state.feedback[videoId].clicks} clic${state.feedback[videoId].clicks>1?'s':''}`; badge.classList.remove('hidden'); }
-  if(state.user) updateDoc(doc(db,'users',state.user.uid),{[`feedback.${videoId}.clicks`]:state.feedback[videoId].clicks}).catch(()=>{});
+  if (!state.feedback[videoId]) state.feedback[videoId] = { clicks: 0, dismissed: false };
+  state.feedback[videoId].clicks = (state.feedback[videoId].clicks || 0) + 1;
+  const badge = $(`clk-${CSS.escape(videoId)}`);
+  const c     = state.feedback[videoId].clicks;
+  if (badge) { badge.textContent = `${c} clic${c > 1 ? 's' : ''}`; badge.classList.remove('hidden'); }
+  if (state.user) updateDoc(doc(db, 'users', state.user.uid), { [`feedback.${videoId}.clicks`]: c }).catch(() => {});
 }
 
 async function dismissVideo(videoId) {
-  if (!state.feedback[videoId]) state.feedback[videoId]={clicks:0,dismissed:false};
-  state.feedback[videoId].dismissed=true;
-  const card=$(`card-${CSS.escape(videoId)}`);
-  if(card){ card.style.transition='opacity .25s,transform .25s'; card.style.opacity='0'; card.style.transform='scale(0.9)'; setTimeout(()=>card.remove(),260); }
-  if(state.user) updateDoc(doc(db,'users',state.user.uid),{[`feedback.${videoId}.dismissed`]:true}).catch(()=>{});
+  if (!state.feedback[videoId]) state.feedback[videoId] = { clicks: 0, dismissed: false };
+  state.feedback[videoId].dismissed = true;
+  const card = $(`card-${CSS.escape(videoId)}`);
+  if (card) { card.style.transition = 'opacity .25s,transform .25s'; card.style.opacity = '0'; card.style.transform = 'scale(0.9)'; setTimeout(() => card.remove(), 260); }
+  if (state.user) updateDoc(doc(db, 'users', state.user.uid), { [`feedback.${videoId}.dismissed`]: true }).catch(() => {});
 }
 
 function applyFeedback(videos) {
-  return videos.filter(v=>!state.feedback[v.video_id]?.dismissed)
-    .map(v=>{ const c=state.feedback[v.video_id]?.clicks||0; return {...v,score:+Math.min(1,v.score+Math.min(c*0.03,0.30)).toFixed(3),clicks:c}; })
-    .sort((a,b)=>b.score-a.score);
+  return videos
+    .filter(v => !state.feedback[v.video_id]?.dismissed)
+    .map(v => {
+      const c = state.feedback[v.video_id]?.clicks || 0;
+      return { ...v, score: +Math.min(1, v.score + Math.min(c * 0.03, 0.30)).toFixed(3), clicks: c };
+    })
+    .sort((a, b) => b.score - a.score);
 }
 
-// ── Mis intereses: keywords editables ────────────────────────────────────────
+// ── Filter bar ────────────────────────────────────────────────────────────────
+function matchesDurFilter(video, filter) {
+  const s = video.duration_s || 0;
+  if (filter === 'all')    return true;
+  if (filter === 'short')  return s > 0 && s < 900;       // <15min
+  if (filter === 'medium') return s >= 900 && s < 1800;   // 15-30min
+  if (filter === 'long')   return s >= 1800 && s < 3600;  // 30-60min
+  if (filter === 'deep')   return s >= 3600;               // >60min
+  return true;
+}
 
+function applyFilters(videos) {
+  return videos.filter(v => {
+    if (!matchesDurFilter(v, state.activeDurFilter)) return false;
+    if (state.onlyNew && (state.feedback[v.video_id]?.clicks || 0) > 0) return false;
+    return true;
+  });
+}
+
+function refreshGrid() {
+  const allWithFeedback = applyFeedback(state.rawVideos);
+  const filtered        = applyFilters(allWithFeedback);
+
+  $('featured-section').innerHTML = '';
+  $('featured-section').classList.add('hidden');
+  $('videos-grid').innerHTML = '';
+
+  if (filtered.length === 0) {
+    showEmpty();
+    return;
+  }
+  renderFeatured(filtered[0]);
+  renderGrid(filtered.slice(1), true);
+}
+
+document.querySelectorAll('.pill:not(.pill--toggle)').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.pill:not(.pill--toggle)').forEach(b => b.classList.remove('pill--active'));
+    btn.classList.add('pill--active');
+    state.activeDurFilter = btn.dataset.dur;
+    refreshGrid();
+  });
+});
+
+$('pill-unwatched').addEventListener('click', () => {
+  state.onlyNew = !state.onlyNew;
+  $('pill-unwatched').classList.toggle('pill--toggle-on', state.onlyNew);
+  refreshGrid();
+});
+
+// ── Mi Sesión ─────────────────────────────────────────────────────────────────
+$('btn-session').addEventListener('click', () => {
+  openSessionModal();
+});
+$('btn-close-session').addEventListener('click', () => {
+  $('modal-session').classList.add('hidden');
+});
+$('modal-session').addEventListener('click', e => {
+  if (e.target === $('modal-session')) $('modal-session').classList.add('hidden');
+});
+
+document.querySelectorAll('.time-preset').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.time-preset').forEach(b => b.classList.remove('time-preset--active'));
+    btn.classList.add('time-preset--active');
+    state.sessionMinutes = parseInt(btn.dataset.min);
+    renderSessionPlaylist();
+  });
+});
+
+function openSessionModal() {
+  $('modal-session').classList.remove('hidden');
+  renderSessionPlaylist();
+}
+
+function renderSessionPlaylist() {
+  const targetSec = state.sessionMinutes * 60;
+  const pool      = applyFeedback(state.rawVideos)
+    .filter(v => !state.feedback[v.video_id]?.dismissed && (v.duration_s || 0) > 0)
+    .sort((a, b) => b.score - a.score);
+
+  // Greedy knapsack: llenar el tiempo con los mejores videos sin pasarse
+  const playlist = [];
+  let totalSec   = 0;
+  for (const v of pool) {
+    if (totalSec + (v.duration_s || 0) <= targetSec + 300) { // +5min de tolerancia
+      playlist.push(v);
+      totalSec += v.duration_s || 0;
+      if (totalSec >= targetSec * 0.85) break; // 85% de llenado = bueno
+    }
+  }
+
+  const statsEl = $('session-stats');
+  const listEl  = $('session-list');
+  const emptyEl = $('session-empty');
+
+  if (!playlist.length) {
+    statsEl.innerHTML = '';
+    listEl.innerHTML  = '';
+    emptyEl.classList.remove('hidden');
+    $('btn-save-session').disabled = true;
+    return;
+  }
+  emptyEl.classList.add('hidden');
+  $('btn-save-session').disabled = false;
+
+  const totalMin = Math.round(totalSec / 60);
+  statsEl.innerHTML = `
+    <span>${playlist.length} videos</span>
+    <span>·</span>
+    <span>${totalMin} min total</span>
+    <span>·</span>
+    <span>Score prom: ${(playlist.reduce((s, v) => s + v.score, 0) / playlist.length * 100).toFixed(0)}</span>`;
+
+  listEl.innerHTML = '';
+  playlist.forEach((v, i) => {
+    const row = document.createElement('a');
+    row.className = 'session-item';
+    row.href      = v.url;
+    row.target    = '_blank';
+    row.rel       = 'noopener noreferrer';
+    row.innerHTML = `
+      <span class="session-item-num">${i + 1}</span>
+      ${v.thumbnail_url ? `<img src="${esc(v.thumbnail_url)}" alt="" class="session-item-thumb" loading="lazy">` : ''}
+      <div class="session-item-info">
+        <div class="session-item-title">${esc(v.title)}</div>
+        <div class="session-item-meta">${esc(v.channel_title)} · ${fmtDuration(v.duration_s)}</div>
+      </div>
+      <span class="${scoreBadgeClass(v.score)} score-badge" style="flex-shrink:0;font-size:.7rem">
+        ${(v.score * 100).toFixed(0)}
+      </span>`;
+    row.addEventListener('click', () => trackClick(v.video_id));
+    listEl.appendChild(row);
+  });
+
+  // Guardar sesión como lista
+  $('btn-save-session').onclick = () => {
+    const name = prompt('Nombre para esta sesión:', `Sesión ${state.sessionMinutes} min`);
+    if (!name?.trim()) return;
+    const newList = createList(name.trim());
+    playlist.forEach(v => addVideoToList(newList.id, v));
+    $('modal-session').classList.add('hidden');
+    showToast(`✓ Sesión guardada como "${name.trim()}"`);
+  };
+}
+
+// ── Keywords editables ────────────────────────────────────────────────────────
 function renderKeywordChips() {
   const container = $('keywords-chips');
   if (!container) return;
@@ -234,7 +387,7 @@ function renderKeywordChips() {
 
 function addKeyword(raw) {
   const kw = raw.trim().toLowerCase();
-  if (!kw || state.keywords.map(k=>k.toLowerCase()).includes(kw)) return false;
+  if (!kw || state.keywords.map(k => k.toLowerCase()).includes(kw)) return false;
   state.keywords.push(kw);
   saveKeywords();
   renderKeywordChips();
@@ -244,45 +397,32 @@ function addKeyword(raw) {
 function saveKeywords() {
   if (!state.user) return;
   updateDoc(doc(db, 'users', state.user.uid), {
-    interest_keywords: state.keywords, updated_at: serverTimestamp()
+    interest_keywords: state.keywords, updated_at: serverTimestamp(),
   }).catch(e => console.warn('saveKeywords:', e.message));
 }
 
-// Sync chips whenever panel opens
-btnParams.addEventListener && null; // forward reference — wired below after btnParams is defined
-
-// Add keyword on Enter / button click
-document.addEventListener('DOMContentLoaded', () => {}); // no-op, wired below
-
 function wireKeywordsUI() {
-  const input = $('kw-input');
+  const input  = $('kw-input');
   const addBtn = $('btn-add-kw');
   if (!input || !addBtn) return;
 
-  const doAdd = () => {
-    if (!input.value.trim()) return;
-    if (addKeyword(input.value)) input.value = '';
-  };
+  const doAdd = () => { if (input.value.trim()) { addKeyword(input.value) && (input.value = ''); } };
   addBtn.addEventListener('click', doAdd);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
 
-  // Suggest
   $('btn-suggest-kw').addEventListener('click', async () => {
-    const btn = $('btn-suggest-kw');
-    const label = btn.querySelector('.btn-label');
+    const btn     = $('btn-suggest-kw');
+    const label   = btn.querySelector('.btn-label');
     const spinner = btn.querySelector('.btn-spinner');
-    const errEl = $('kw-error');
-    const wrap = $('kw-suggestions-wrap');
+    const errEl   = $('kw-error');
+    const wrap    = $('kw-suggestions-wrap');
     errEl.classList.add('hidden'); wrap.classList.add('hidden');
 
-    if (!state.keywords.length) {
-      errEl.textContent = 'Agrega al menos un tema primero.';
-      errEl.classList.remove('hidden'); return;
-    }
+    if (!state.keywords.length) { errEl.textContent = 'Agrega al menos un tema primero.'; errEl.classList.remove('hidden'); return; }
     btn.disabled = true; label.textContent = 'Analizando…'; spinner.classList.remove('hidden');
     try {
       const token = await getToken();
-      const res = await fetch('/api/suggest', {
+      const res   = await fetch('/api/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ keywords: state.keywords }),
@@ -290,24 +430,20 @@ function wireKeywordsUI() {
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || `Error ${res.status}`); }
       const { suggestions } = await res.json();
 
-      if (!suggestions.length) {
-        errEl.textContent = 'No se encontraron sugerencias nuevas.';
-        errEl.classList.remove('hidden'); return;
-      }
+      if (!suggestions.length) { errEl.textContent = 'No se encontraron sugerencias nuevas.'; errEl.classList.remove('hidden'); return; }
 
-      // Render suggestion chips
       const suggChips = $('kw-suggestion-chips');
       suggChips.innerHTML = '';
       suggestions.forEach(kw => {
         const chip = document.createElement('button');
         chip.className = 'kw-chip kw-chip--suggestion';
-        chip.type = 'button';
+        chip.type      = 'button';
         chip.textContent = kw;
         chip.addEventListener('click', () => {
           addKeyword(kw);
           chip.classList.add('kw-chip--added');
           chip.textContent = `✓ ${kw}`;
-          chip.disabled = true;
+          chip.disabled    = true;
         });
         suggChips.appendChild(chip);
       });
@@ -317,76 +453,77 @@ function wireKeywordsUI() {
         wrap.classList.add('hidden');
         showToast(`✓ ${suggestions.length} temas agregados`);
       };
-
       wrap.classList.remove('hidden');
-    } catch(err) {
+    } catch (err) {
       errEl.textContent = err.message; errEl.classList.remove('hidden');
     } finally {
       btn.disabled = false; label.textContent = '💡 Sugerir temas que te faltan'; spinner.classList.add('hidden');
     }
   });
 }
-// wireKeywordsUI() se llama al final del módulo, después de que todos los
-// const (WEIGHT_KEYS, btnParams, etc.) estén inicializados. Moverlo aquí
-// causaría un TDZ (Temporal Dead Zone) por const no hoisted.
 
-// ── Parámetros ────────────────────────────────────────────────────────────────
-const paramsPanel=$('params-panel'), btnParams=$('btn-params'), weightsSum=$('weights-sum');
-btnParams.addEventListener('click',()=>{ const h=paramsPanel.classList.contains('hidden'); paramsPanel.classList.toggle('hidden',!h); btnParams.setAttribute('aria-expanded',String(h)); closeListsPanel(); });
-$('btn-close-params').addEventListener('click',()=>{ paramsPanel.classList.add('hidden'); btnParams.setAttribute('aria-expanded','false'); });
+// ── Score popover ─────────────────────────────────────────────────────────────
+const scorePopover = $('score-popover');
+let popoverTimer   = null;
 
-WEIGHT_KEYS.forEach(key=>{
-  const s=$(`w-${key}`),o=$(`w-${key}-val`);
-  s.addEventListener('input',()=>{ state.weights[key]=parseInt(s.value); o.textContent=s.value; updateWeightsSum(); });
-});
-$('dur-min').addEventListener('input',function(){ state.durMin=parseInt(this.value); $('dur-min-val').textContent=this.value; });
-$('dur-max').addEventListener('input',function(){ state.durMax=parseInt(this.value); $('dur-max-val').textContent=this.value; });
-$('mode-select').addEventListener('change',function(){ state.mode=this.value; applyModePreset(this.value); });
+function showScorePopover(anchorEl, breakdown) {
+  if (!breakdown) return;
+  clearTimeout(popoverTimer);
+  const entries = [
+    { label: 'Engagement', val: breakdown.engagement },
+    { label: 'Relevancia', val: breakdown.relevance  },
+    { label: 'Profundidad', val: breakdown.depth      },
+    { label: 'Duración',   val: breakdown.duration   },
+    { label: 'Subtítulos', val: breakdown.captions   },
+    { label: 'Autoridad',  val: breakdown.authority  },
+  ];
+  scorePopover.innerHTML = `
+    <div class="popover-title">Score breakdown</div>
+    ${entries.map(e => `
+      <div class="popover-row">
+        <span>${e.label}</span>
+        <div class="popover-bar-wrap"><div class="popover-bar" style="width:${Math.round(e.val * 100)}%"></div></div>
+        <span class="popover-val">${(e.val * 100).toFixed(0)}</span>
+      </div>`).join('')}`;
 
-// Mode cards (visual radio buttons)
-document.querySelectorAll('.mode-card').forEach(card => {
-  card.addEventListener('click', () => {
-    const mode = card.dataset.mode;
-    // Update cards
-    document.querySelectorAll('.mode-card').forEach(c => {
-      c.classList.toggle('mode-card--active', c.dataset.mode === mode);
-      c.setAttribute('aria-checked', String(c.dataset.mode === mode));
-    });
-    // Sync hidden select + apply preset
-    $('mode-select').value = mode;
-    state.mode = mode;
-    applyModePreset(mode);
-  });
-});
-
-function syncModeCards(mode) {
-  document.querySelectorAll('.mode-card').forEach(c => {
-    c.classList.toggle('mode-card--active', c.dataset.mode === mode);
-    c.setAttribute('aria-checked', String(c.dataset.mode === mode));
-  });
+  const rect = anchorEl.getBoundingClientRect();
+  scorePopover.classList.remove('hidden');
+  const pw = scorePopover.offsetWidth;
+  const ph = scorePopover.offsetHeight;
+  let left = rect.left + window.scrollX;
+  let top  = rect.bottom + window.scrollY + 6;
+  if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+  if (top  + ph > window.scrollY + window.innerHeight - 8) top = rect.top + window.scrollY - ph - 6;
+  scorePopover.style.left = `${left}px`;
+  scorePopover.style.top  = `${top}px`;
 }
 
-function updateWeightsSum(){
-  const t=WEIGHT_KEYS.reduce((s,k)=>s+state.weights[k],0);
-  weightsSum.textContent=`Σ = ${t}`;
-  weightsSum.className='badge '+(t===100?'badge--ok':t>100?'badge--err':'badge--warn');
+function hideScorePopover() {
+  popoverTimer = setTimeout(() => scorePopover.classList.add('hidden'), 150);
 }
-function applyModePreset(mode){
-  const P={depth:{engagement:25,relevance:30,depth:25,duration:10,captions:5,authority:5},quick:{engagement:40,relevance:20,depth:10,duration:20,captions:5,authority:5},balanced:{engagement:35,relevance:25,depth:15,duration:10,captions:5,authority:10}};
-  Object.assign(state.weights,P[mode]||P.balanced);
-  WEIGHT_KEYS.forEach(k=>{ $(`w-${k}`).value=state.weights[k]; $(`w-${k}-val`).textContent=state.weights[k]; });
-  updateWeightsSum();
-}
-$('btn-apply-params').addEventListener('click',async()=>{
-  if(state.user) updateDoc(doc(db,'users',state.user.uid),{weights:{...state.weights},settings:{mode:state.mode,duration_min:state.durMin,duration_max:state.durMax},updated_at:serverTimestamp()}).catch(()=>{});
-  paramsPanel.classList.add('hidden'); btnParams.setAttribute('aria-expanded','false');
-  loadVideos(true);
-});
 
-// ── Perfil inline en el panel de parámetros ───────────────────────────────────
-// Sincronizar textarea y keywords al abrir el panel
+scorePopover.addEventListener('mouseenter', () => clearTimeout(popoverTimer));
+scorePopover.addEventListener('mouseleave', hideScorePopover);
+
+// ── Panel de parámetros ───────────────────────────────────────────────────────
+const paramsPanel = $('params-panel');
+const btnParams   = $('btn-params');
+const weightsSum  = $('weights-sum');
+
 btnParams.addEventListener('click', () => {
-  const desc = state.userProfile?.description || '';
+  const h = paramsPanel.classList.contains('hidden');
+  paramsPanel.classList.toggle('hidden', !h);
+  btnParams.setAttribute('aria-expanded', String(h));
+  closeListsPanel();
+});
+$('btn-close-params').addEventListener('click', () => {
+  paramsPanel.classList.add('hidden');
+  btnParams.setAttribute('aria-expanded', 'false');
+});
+
+// Sync perfil inline al abrir el panel
+btnParams.addEventListener('click', () => {
+  const desc   = state.userProfile?.description || '';
   const inline = $('profile-desc-inline');
   if (inline && desc && inline.value !== desc) inline.value = desc;
   renderKeywordChips();
@@ -400,16 +537,12 @@ $('btn-update-profile').addEventListener('click', async () => {
   const errEl   = $('profile-inline-error');
   const okEl    = $('profile-inline-ok');
   errEl.classList.add('hidden'); okEl.classList.add('hidden');
-
   const description = $('profile-desc-inline').value.trim();
-  if (description.length < 20) {
-    errEl.textContent = 'Escribe al menos 20 caracteres.';
-    errEl.classList.remove('hidden'); return;
-  }
+  if (description.length < 20) { errEl.textContent = 'Escribe al menos 20 caracteres.'; errEl.classList.remove('hidden'); return; }
   btn.disabled = true; label.textContent = 'Procesando…'; spinner.classList.remove('hidden');
   try {
     const token = await getToken();
-    const res = await fetch('/api/onboard', {
+    const res   = await fetch('/api/onboard', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ description }),
@@ -421,67 +554,123 @@ $('btn-update-profile').addEventListener('click', async () => {
     await saveProfile({ description, derived_seeds: seeds, interest_keywords: keywords, updated_at: serverTimestamp() });
     okEl.classList.remove('hidden');
     setTimeout(() => okEl.classList.add('hidden'), 3000);
-    loadVideos(true); // re-rankear con nuevos keywords sin cerrar el panel
-  } catch(err) {
+    loadVideos(true);
+  } catch (err) {
     errEl.textContent = err.message; errEl.classList.remove('hidden');
   } finally {
     btn.disabled = false; label.textContent = 'Actualizar perfil →'; spinner.classList.add('hidden');
   }
 });
 
-// ── Panel de Listas ───────────────────────────────────────────────────────────
-const listsPanel=$('lists-panel');
-
-$('btn-lists').addEventListener('click',()=>{
-  const isHidden=listsPanel.classList.contains('hidden');
-  listsPanel.classList.toggle('hidden',!isHidden);
-  $('btn-lists').setAttribute('aria-expanded',String(isHidden));
-  if(isHidden){ renderListsDirectory(); paramsPanel.classList.add('hidden'); }
+WEIGHT_KEYS.forEach(key => {
+  const s = $(`w-${key}`), o = $(`w-${key}-val`);
+  s.addEventListener('input', () => { state.weights[key] = parseInt(s.value); o.textContent = s.value; updateWeightsSum(); });
 });
-$('btn-close-lists').addEventListener('click',closeListsPanel);
+$('dur-min').addEventListener('input', function () { state.durMin = parseInt(this.value); $('dur-min-val').textContent = this.value; });
+$('dur-max').addEventListener('input', function () { state.durMax = parseInt(this.value); $('dur-max-val').textContent = this.value; });
+$('mode-select').addEventListener('change', function () { state.mode = this.value; applyModePreset(this.value); });
 
-function closeListsPanel(){
+document.querySelectorAll('.mode-card').forEach(card => {
+  card.addEventListener('click', () => {
+    const mode = card.dataset.mode;
+    document.querySelectorAll('.mode-card').forEach(c => {
+      c.classList.toggle('mode-card--active', c.dataset.mode === mode);
+      c.setAttribute('aria-checked', String(c.dataset.mode === mode));
+    });
+    $('mode-select').value = mode;
+    state.mode = mode;
+    applyModePreset(mode);
+  });
+});
+
+function syncModeCards(mode) {
+  document.querySelectorAll('.mode-card').forEach(c => {
+    c.classList.toggle('mode-card--active', c.dataset.mode === mode);
+    c.setAttribute('aria-checked', String(c.dataset.mode === mode));
+  });
+}
+
+function updateWeightsSum() {
+  const t = WEIGHT_KEYS.reduce((s, k) => s + state.weights[k], 0);
+  weightsSum.textContent = `Σ = ${t}`;
+  weightsSum.className   = `badge ${t === 100 ? 'badge--ok' : t > 100 ? 'badge--err' : 'badge--warn'}`;
+}
+
+function applyModePreset(mode) {
+  const P = {
+    depth:    { engagement: 25, relevance: 30, depth: 25, duration: 10, captions: 5, authority:  5 },
+    quick:    { engagement: 40, relevance: 20, depth: 10, duration: 20, captions: 5, authority:  5 },
+    balanced: { engagement: 35, relevance: 25, depth: 15, duration: 10, captions: 5, authority: 10 },
+  };
+  Object.assign(state.weights, P[mode] || P.balanced);
+  WEIGHT_KEYS.forEach(k => { $(`w-${k}`).value = state.weights[k]; $(`w-${k}-val`).textContent = state.weights[k]; });
+  updateWeightsSum();
+}
+
+$('btn-apply-params').addEventListener('click', async () => {
+  if (state.user)
+    updateDoc(doc(db, 'users', state.user.uid), {
+      weights: { ...state.weights },
+      settings: { mode: state.mode, duration_min: state.durMin, duration_max: state.durMax },
+      updated_at: serverTimestamp(),
+    }).catch(() => {});
+  paramsPanel.classList.add('hidden');
+  btnParams.setAttribute('aria-expanded', 'false');
+  loadVideos(true);
+});
+
+// ── Panel de Listas ───────────────────────────────────────────────────────────
+const listsPanel = $('lists-panel');
+
+$('btn-lists').addEventListener('click', () => {
+  const isHidden = listsPanel.classList.contains('hidden');
+  listsPanel.classList.toggle('hidden', !isHidden);
+  $('btn-lists').setAttribute('aria-expanded', String(isHidden));
+  if (isHidden) { renderListsDirectory(); paramsPanel.classList.add('hidden'); }
+});
+$('btn-close-lists').addEventListener('click', closeListsPanel);
+
+function closeListsPanel() {
   listsPanel.classList.add('hidden');
-  $('btn-lists').setAttribute('aria-expanded','false');
+  $('btn-lists').setAttribute('aria-expanded', 'false');
 }
 
-function renderListsBadge(){
-  const badge=$('lists-count-badge');
-  const count=state.lists.length;
-  badge.textContent=count;
-  badge.classList.toggle('hidden',count===0);
+function renderListsBadge() {
+  const badge = $('lists-count-badge');
+  badge.textContent = state.lists.length;
+  badge.classList.toggle('hidden', state.lists.length === 0);
 }
 
-function renderListsDirectory(){
-  const dir=$('lists-directory');
-  dir.innerHTML='';
-  if(!state.lists.length){
-    dir.innerHTML='<p class="lists-empty-hint">Aún no tienes listas.<br>Crea una con el botón de arriba.</p>';
+function renderListsDirectory() {
+  const dir = $('lists-directory');
+  dir.innerHTML = '';
+  if (!state.lists.length) {
+    dir.innerHTML = '<p class="lists-empty-hint">Aún no tienes listas.<br>Crea una con el botón de arriba.</p>';
     return;
   }
-  [...state.lists].sort((a,b)=>a.order-b.order).forEach(list=>{
-    const count=Object.keys(state.listItems[list.id]||{}).length;
-    const btn=document.createElement('button');
-    btn.className='list-dir-item';
-    btn.type='button';
-    btn.innerHTML=`<span class="list-dir-name">${esc(list.name)}</span><span class="list-dir-count">${count} video${count!==1?'s':''}</span>`;
-    btn.addEventListener('click',()=>{ closeListsPanel(); showListView(list.id); });
+  [...state.lists].sort((a, b) => a.order - b.order).forEach(list => {
+    const count = Object.keys(state.listItems[list.id] || {}).length;
+    const btn   = document.createElement('button');
+    btn.className = 'list-dir-item';
+    btn.type      = 'button';
+    btn.innerHTML = `<span class="list-dir-name">${esc(list.name)}</span><span class="list-dir-count">${count} video${count !== 1 ? 's' : ''}</span>`;
+    btn.addEventListener('click', () => { closeListsPanel(); showListView(list.id); });
     dir.appendChild(btn);
   });
 }
 
-$('btn-create-list').addEventListener('click',()=> promptCreateList());
+$('btn-create-list').addEventListener('click', () => promptCreateList());
 
-function promptCreateList(defaultName=''){
-  const name=prompt('Nombre de la nueva lista:',defaultName||'');
-  if(!name?.trim()) return;
+function promptCreateList(defaultName = '') {
+  const name = prompt('Nombre de la nueva lista:', defaultName || '');
+  if (!name?.trim()) return;
   createList(name.trim());
 }
 
-function createList(name){
-  const newList={ id:uid(), name, order:state.lists.length, created_at:new Date().toISOString() };
+function createList(name) {
+  const newList = { id: uid(), name, order: state.lists.length, created_at: new Date().toISOString() };
   state.lists.push(newList);
-  state.listItems[newList.id]={};
+  state.listItems[newList.id] = {};
   persistLists();
   renderListsBadge();
   renderListsDirectory();
@@ -489,9 +678,9 @@ function createList(name){
   return newList;
 }
 
-function deleteList(listId){
-  if(!confirm('¿Eliminar esta lista y todos sus videos?')) return;
-  state.lists=state.lists.filter(l=>l.id!==listId);
+function deleteList(listId) {
+  if (!confirm('¿Eliminar esta lista y todos sus videos?')) return;
+  state.lists     = state.lists.filter(l => l.id !== listId);
   delete state.listItems[listId];
   persistLists();
   renderListsBadge();
@@ -499,434 +688,484 @@ function deleteList(listId){
   showToast('Lista eliminada');
 }
 
-function renameList(listId){
-  const list=state.lists.find(l=>l.id===listId);
-  if(!list) return;
-  const name=prompt('Nuevo nombre:',list.name);
-  if(!name?.trim()||name.trim()===list.name) return;
-  list.name=name.trim();
+function renameList(listId) {
+  const list = state.lists.find(l => l.id === listId);
+  if (!list) return;
+  const name = prompt('Nuevo nombre:', list.name);
+  if (!name?.trim() || name.trim() === list.name) return;
+  list.name = name.trim();
   persistLists();
-  $('list-view-name').textContent=list.name;
+  $('list-view-name').textContent = list.name;
   showToast('Lista renombrada');
 }
 
-function persistLists(){
-  if(!state.user) return;
-  updateDoc(doc(db,'users',state.user.uid),{
-    lists:state.lists, listItems:state.listItems, updated_at:serverTimestamp()
-  }).catch(e=>console.warn('persistLists:',e.message));
+function persistLists() {
+  if (!state.user) return;
+  updateDoc(doc(db, 'users', state.user.uid), {
+    lists: state.lists, listItems: state.listItems, updated_at: serverTimestamp(),
+  }).catch(e => console.warn('persistLists:', e.message));
 }
 
 // ── Vista de Lista ────────────────────────────────────────────────────────────
-function showListView(listId){
-  const list=state.lists.find(l=>l.id===listId);
-  if(!list) return;
-  state.currentView='list';
-  state.currentListId=listId;
+function showListView(listId) {
+  const list = state.lists.find(l => l.id === listId);
+  if (!list) return;
+  state.currentView   = 'list';
+  state.currentListId = listId;
   $('home-view').classList.add('hidden');
   $('list-view').classList.remove('hidden');
-  $('list-view-name').textContent=list.name;
+  $('list-view-name').textContent = list.name;
   renderListView();
 }
 
-function showHomeView(){
-  state.currentView='home';
-  state.currentListId=null;
+function showHomeView() {
+  state.currentView   = 'home';
+  state.currentListId = null;
   $('list-view').classList.add('hidden');
   $('home-view').classList.remove('hidden');
 }
 
-$('btn-back-home').addEventListener('click',showHomeView);
-$('btn-delete-list').addEventListener('click',()=>{ if(state.currentListId) deleteList(state.currentListId); });
-$('btn-rename-list').addEventListener('click',()=>{ if(state.currentListId) renameList(state.currentListId); });
+$('btn-back-home').addEventListener('click', showHomeView);
+$('btn-delete-list').addEventListener('click', () => { if (state.currentListId) deleteList(state.currentListId); });
+$('btn-rename-list').addEventListener('click', () => { if (state.currentListId) renameList(state.currentListId); });
 
-function renderListView(){
-  const container=$('list-items-container');
-  container.innerHTML='';
-  const items=state.listItems[state.currentListId]||{};
-  const sorted=Object.entries(items).sort((a,b)=>(a[1].order||0)-(b[1].order||0));
-
-  $('list-empty-state').classList.toggle('hidden',sorted.length>0);
-
-  sorted.forEach(([videoId, data], idx)=>{
-    const row=buildListItemRow(videoId,data,idx,sorted.length);
-    container.appendChild(row);
-  });
+function renderListView() {
+  const container = $('list-items-container');
+  container.innerHTML = '';
+  const items  = state.listItems[state.currentListId] || {};
+  const sorted = Object.entries(items).sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+  $('list-empty-state').classList.toggle('hidden', sorted.length > 0);
+  sorted.forEach(([videoId, data], idx) => container.appendChild(buildListItemRow(videoId, data, idx, sorted.length)));
 }
 
-function buildListItemRow(videoId,data,idx,total){
-  const row=document.createElement('div');
-  row.className='list-item-row';
-  row.id=`listrow-${CSS.escape(videoId)}`;
-
-  row.innerHTML=`
+function buildListItemRow(videoId, data, idx, total) {
+  const row     = document.createElement('div');
+  row.className = 'list-item-row';
+  row.id        = `listrow-${CSS.escape(videoId)}`;
+  row.innerHTML = `
     <div class="list-item-thumb-wrap">
-      ${data.thumbnail_url
-        ? `<img src="${esc(data.thumbnail_url)}" alt="${esc(data.title)}" loading="lazy" class="list-item-thumb">`
-        : `<div class="list-item-thumb-placeholder">▶</div>`}
+      ${data.thumbnail_url ? `<img src="${esc(data.thumbnail_url)}" alt="${esc(data.title)}" loading="lazy" class="list-item-thumb">` : `<div class="list-item-thumb-placeholder">▶</div>`}
       <span class="video-duration">${fmtDuration(data.duration_s)}</span>
     </div>
     <div class="list-item-info">
       <a href="${esc(data.url)}" target="_blank" rel="noopener noreferrer" class="list-item-title"
-         onclick="trackClickExternal('${videoId}')">${esc(data.title)}</a>
+         onclick="window.trackClickExternal && window.trackClickExternal('${videoId}')">${esc(data.title)}</a>
       <div class="list-item-meta">
         <span>${esc(data.channel_title)}</span>
-        ${data.score?`<span class="${scoreBadgeClass(data.score)} score-badge" style="font-size:.7rem">Score ${(data.score*100).toFixed(0)}</span>`:''}
+        ${data.score ? `<span class="${scoreBadgeClass(data.score)} score-badge" style="font-size:.7rem">Score ${(data.score * 100).toFixed(0)}</span>` : ''}
       </div>
     </div>
     <div class="list-item-actions">
-      <button class="btn-move" data-dir="up" data-id="${videoId}" title="Subir" ${idx===0?'disabled':''}>↑</button>
-      <button class="btn-move" data-dir="down" data-id="${videoId}" title="Bajar" ${idx===total-1?'disabled':''}>↓</button>
-      <button class="btn-remove-from-list" data-id="${videoId}" title="Quitar de la lista">✕</button>
+      <button class="btn-move" data-dir="up"   data-id="${videoId}" title="Subir"  ${idx === 0           ? 'disabled' : ''}>↑</button>
+      <button class="btn-move" data-dir="down" data-id="${videoId}" title="Bajar"  ${idx === total - 1   ? 'disabled' : ''}>↓</button>
+      <button class="btn-remove-from-list" data-id="${videoId}" title="Quitar">✕</button>
     </div>`;
-
-  row.querySelectorAll('.btn-move').forEach(btn=>{
-    btn.addEventListener('click',()=>moveItemInList(state.currentListId,videoId,btn.dataset.dir));
+  row.querySelectorAll('.btn-move').forEach(btn => {
+    btn.addEventListener('click', () => moveItemInList(state.currentListId, videoId, btn.dataset.dir));
   });
-  row.querySelector('.btn-remove-from-list').addEventListener('click',()=>removeFromList(state.currentListId,videoId));
+  row.querySelector('.btn-remove-from-list').addEventListener('click', () => removeFromList(state.currentListId, videoId));
   return row;
 }
 
-// Exponer trackClick para el onclick inline de los links en la lista
 window.trackClickExternal = videoId => trackClick(videoId);
 
-function moveItemInList(listId,videoId,dir){
-  const items=state.listItems[listId];
-  if(!items) return;
-  const sorted=Object.entries(items).sort((a,b)=>(a[1].order||0)-(b[1].order||0));
-  const idx=sorted.findIndex(([id])=>id===videoId);
-  const swapIdx=dir==='up'?idx-1:idx+1;
-  if(swapIdx<0||swapIdx>=sorted.length) return;
-  [sorted[idx][1].order, sorted[swapIdx][1].order]=[sorted[swapIdx][1].order, sorted[idx][1].order];
+function moveItemInList(listId, videoId, dir) {
+  const items  = state.listItems[listId];
+  if (!items) return;
+  const sorted = Object.entries(items).sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+  const idx    = sorted.findIndex(([id]) => id === videoId);
+  const swap   = dir === 'up' ? idx - 1 : idx + 1;
+  if (swap < 0 || swap >= sorted.length) return;
+  [sorted[idx][1].order, sorted[swap][1].order] = [sorted[swap][1].order, sorted[idx][1].order];
   persistLists();
   renderListView();
 }
 
-function removeFromList(listId,videoId){
+function removeFromList(listId, videoId) {
   delete state.listItems[listId][videoId];
   persistLists();
-  const row=$(`listrow-${CSS.escape(videoId)}`);
-  if(row){ row.style.transition='opacity .2s'; row.style.opacity='0'; setTimeout(()=>row.remove(),220); }
-  const remaining=Object.keys(state.listItems[listId]||{}).length;
-  $('list-empty-state').classList.toggle('hidden',remaining>0);
+  const row = $(`listrow-${CSS.escape(videoId)}`);
+  if (row) { row.style.transition = 'opacity .2s'; row.style.opacity = '0'; setTimeout(() => row.remove(), 220); }
+  const remaining = Object.keys(state.listItems[listId] || {}).length;
+  $('list-empty-state').classList.toggle('hidden', remaining > 0);
   showToast('Video quitado de la lista');
 }
 
-function addVideoToList(listId,videoData){
-  const items=state.listItems[listId]||{};
-  if(items[videoData.video_id]){ showToast('Ya está en esta lista'); return; }
-  const order=Object.keys(items).length;
-  items[videoData.video_id]={
-    order, added_at:new Date().toISOString(),
-    title:videoData.title, channel_title:videoData.channel_title,
-    thumbnail_url:videoData.thumbnail_url, url:videoData.url,
-    duration_s:videoData.duration_s||videoData.duration_seconds,
-    score:videoData.score||videoData.score_base||0,
+function addVideoToList(listId, videoData) {
+  const items = state.listItems[listId] || {};
+  if (items[videoData.video_id]) { showToast('Ya está en esta lista'); return; }
+  items[videoData.video_id] = {
+    order:         Object.keys(items).length,
+    added_at:      new Date().toISOString(),
+    title:         videoData.title,
+    channel_title: videoData.channel_title,
+    thumbnail_url: videoData.thumbnail_url,
+    url:           videoData.url,
+    duration_s:    videoData.duration_s || videoData.duration_seconds,
+    score:         videoData.score || videoData.score_base || 0,
   };
-  state.listItems[listId]=items;
+  state.listItems[listId] = items;
   persistLists();
-  const listName=state.lists.find(l=>l.id===listId)?.name||'lista';
+  const listName = state.lists.find(l => l.id === listId)?.name || 'lista';
   showToast(`✓ Guardado en "${listName}"`);
-  if(state.currentView==='list'&&state.currentListId===listId) renderListView();
+  if (state.currentView === 'list' && state.currentListId === listId) renderListView();
 }
 
 // ── Dropdown "Agregar a lista" ────────────────────────────────────────────────
-let _dropdownVideoData=null;
-const listDropdown=$('list-dropdown');
+let _dropdownVideoData = null;
+const listDropdown     = $('list-dropdown');
 
-function showListDropdown(anchorEl, videoData){
-  _dropdownVideoData=videoData;
-  const items=$('list-dropdown-items');
-  items.innerHTML='';
-  if(!state.lists.length){
-    items.innerHTML='<p style="padding:.5rem .75rem;color:var(--text-muted);font-size:.8125rem">Sin listas aún</p>';
+function showListDropdown(anchorEl, videoData) {
+  _dropdownVideoData = videoData;
+  const items = $('list-dropdown-items');
+  items.innerHTML = '';
+  if (!state.lists.length) {
+    items.innerHTML = '<p style="padding:.5rem .75rem;color:var(--text-muted);font-size:.8125rem">Sin listas aún</p>';
   } else {
-    state.lists.forEach(list=>{
-      const inList=!!state.listItems[list.id]?.[videoData.video_id];
-      const btn=document.createElement('button');
-      btn.className='list-dropdown-item'+(inList?' list-dropdown-item--saved':'');
-      btn.type='button';
-      btn.textContent=inList?`✓ ${list.name}`:list.name;
-      btn.addEventListener('click',()=>{
-        if(!inList) addVideoToList(list.id,videoData);
-        closeDropdown();
-      });
+    state.lists.forEach(list => {
+      const inList = !!state.listItems[list.id]?.[videoData.video_id];
+      const btn    = document.createElement('button');
+      btn.className = `list-dropdown-item${inList ? ' list-dropdown-item--saved' : ''}`;
+      btn.type      = 'button';
+      btn.textContent = inList ? `✓ ${list.name}` : list.name;
+      btn.addEventListener('click', () => { if (!inList) addVideoToList(list.id, videoData); closeDropdown(); });
       items.appendChild(btn);
     });
   }
-
-  const rect=anchorEl.getBoundingClientRect();
+  const rect = anchorEl.getBoundingClientRect();
   listDropdown.classList.remove('hidden');
-  listDropdown.style.top  = `${rect.bottom+window.scrollY+4}px`;
-  listDropdown.style.left = `${Math.min(rect.left+window.scrollX, window.innerWidth-220)}px`;
+  listDropdown.style.top  = `${rect.bottom + window.scrollY + 4}px`;
+  listDropdown.style.left = `${Math.min(rect.left + window.scrollX, window.innerWidth - 220)}px`;
 }
 
-function closeDropdown(){ listDropdown.classList.add('hidden'); _dropdownVideoData=null; }
+function closeDropdown() { listDropdown.classList.add('hidden'); _dropdownVideoData = null; }
 
-$('list-dropdown-new').addEventListener('click',()=>{
+$('list-dropdown-new').addEventListener('click', () => {
   closeDropdown();
-  const name=prompt('Nombre de la nueva lista:','');
-  if(!name?.trim()) return;
-  const newList=createList(name.trim());
-  if(_dropdownVideoData){ addVideoToList(newList.id,_dropdownVideoData); _dropdownVideoData=null; }
+  const name = prompt('Nombre de la nueva lista:', '');
+  if (!name?.trim()) return;
+  const newList = createList(name.trim());
+  if (_dropdownVideoData) { addVideoToList(newList.id, _dropdownVideoData); _dropdownVideoData = null; }
 });
 
-document.addEventListener('click',e=>{
-  if(!listDropdown.classList.contains('hidden')&&!listDropdown.contains(e.target)&&!e.target.closest('.btn-bookmark'))
+document.addEventListener('click', e => {
+  if (!listDropdown.classList.contains('hidden') && !listDropdown.contains(e.target) && !e.target.closest('.btn-bookmark'))
     closeDropdown();
 });
 
 // ── Modal: Agregar video por URL ──────────────────────────────────────────────
-function openAddVideoModal(preselectedListId=null){
-  state.pendingAddVideoListId=preselectedListId;
-  $('video-url-input').value='';
-  $('video-preview').classList.add('hidden'); $('video-preview').innerHTML='';
+function openAddVideoModal(preselectedListId = null) {
+  state.pendingAddVideoListId = preselectedListId;
+  $('video-url-input').value = '';
+  $('video-preview').classList.add('hidden'); $('video-preview').innerHTML = '';
   $('modal-list-select-wrap').classList.add('hidden');
   $('modal-error').classList.add('hidden');
   $('modal-add-video').classList.remove('hidden');
   $('video-url-input').focus();
-  // Poblar select de listas
   populateModalListSelect(preselectedListId);
 }
 
-function closeModal(){
-  $('modal-add-video').classList.add('hidden');
-  state.pendingAddVideoListId=null;
-}
+function closeModal() { $('modal-add-video').classList.add('hidden'); state.pendingAddVideoListId = null; }
 
-function populateModalListSelect(preselected){
-  const sel=$('modal-list-select');
-  sel.innerHTML='';
-  if(!state.lists.length){
-    sel.innerHTML='<option value="__new__">+ Crear nueva lista…</option>';
+function populateModalListSelect(preselected) {
+  const sel = $('modal-list-select');
+  sel.innerHTML = '';
+  if (!state.lists.length) {
+    sel.innerHTML = '<option value="__new__">+ Crear nueva lista…</option>';
     return;
   }
-  state.lists.forEach(list=>{
-    const opt=document.createElement('option');
-    opt.value=list.id; opt.textContent=list.name;
-    if(list.id===preselected) opt.selected=true;
+  state.lists.forEach(list => {
+    const opt = document.createElement('option');
+    opt.value   = list.id; opt.textContent = list.name;
+    if (list.id === preselected) opt.selected = true;
     sel.appendChild(opt);
   });
-  const newOpt=document.createElement('option');
-  newOpt.value='__new__'; newOpt.textContent='+ Crear nueva lista…';
+  const newOpt = document.createElement('option');
+  newOpt.value = '__new__'; newOpt.textContent = '+ Crear nueva lista…';
   sel.appendChild(newOpt);
 }
 
-$('btn-close-modal').addEventListener('click',closeModal);
-$('modal-add-video').addEventListener('click',e=>{ if(e.target===$('modal-add-video')) closeModal(); });
-$('btn-open-add-video-bar').addEventListener('click',()=>openAddVideoModal(null));
-$('btn-open-add-video-list').addEventListener('click',()=>openAddVideoModal(state.currentListId));
+$('btn-close-modal').addEventListener('click', closeModal);
+$('modal-add-video').addEventListener('click', e => { if (e.target === $('modal-add-video')) closeModal(); });
+$('btn-open-add-video-bar').addEventListener('click',  () => openAddVideoModal(null));
+$('btn-open-add-video-list').addEventListener('click', () => openAddVideoModal(state.currentListId));
 
-$('btn-fetch-video').addEventListener('click',async()=>{
-  const btn=$('btn-fetch-video'), label=btn.querySelector('.btn-label'), spinner=btn.querySelector('.btn-spinner');
-  const url=$('video-url-input').value.trim();
-  const errEl=$('modal-error');
+$('btn-fetch-video').addEventListener('click', async () => {
+  const btn     = $('btn-fetch-video');
+  const label   = btn.querySelector('.btn-label');
+  const spinner = btn.querySelector('.btn-spinner');
+  const url     = $('video-url-input').value.trim();
+  const errEl   = $('modal-error');
   errEl.classList.add('hidden');
-  if(!url){ errEl.textContent='Pega una URL de YouTube primero.'; errEl.classList.remove('hidden'); return; }
-
-  btn.disabled=true; label.textContent='Buscando…'; spinner.classList.remove('hidden');
+  if (!url) { errEl.textContent = 'Pega una URL de YouTube primero.'; errEl.classList.remove('hidden'); return; }
+  btn.disabled = true; label.textContent = 'Buscando…'; spinner.classList.remove('hidden');
   try {
-    const token=await getToken();
-    const res=await fetch('/api/add-video',{method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},
-      body:JSON.stringify({url})});
-    if(!res.ok){ const d=await res.json(); throw new Error(d.error||`Error ${res.status}`); }
+    const token = await getToken();
+    const res   = await fetch('/api/add-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ url }),
+    });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error || `Error ${res.status}`); }
     const { video } = await res.json();
-
-    // Mostrar preview
-    const preview=$('video-preview');
-    preview.innerHTML=`
+    const preview   = $('video-preview');
+    preview.innerHTML = `
       <div class="modal-preview">
-        ${video.thumbnail_url?`<img src="${esc(video.thumbnail_url)}" alt="${esc(video.title)}" class="modal-preview-thumb">`:''}
+        ${video.thumbnail_url ? `<img src="${esc(video.thumbnail_url)}" alt="${esc(video.title)}" class="modal-preview-thumb">` : ''}
         <div class="modal-preview-info">
           <div class="modal-preview-title">${esc(video.title)}</div>
           <div class="modal-preview-meta">${esc(video.channel_title)} · ${fmtDuration(video.duration_s)}</div>
         </div>
       </div>`;
     preview.classList.remove('hidden');
-
-    // Guardar data para uso en confirm
-    btn.dataset.videoData=JSON.stringify(video);
+    btn.dataset.videoData = JSON.stringify(video);
     $('modal-list-select-wrap').classList.remove('hidden');
-  } catch(err) {
-    errEl.textContent=err.message; errEl.classList.remove('hidden');
+  } catch (err) {
+    errEl.textContent = err.message; errEl.classList.remove('hidden');
   } finally {
-    btn.disabled=false; label.textContent='Buscar video'; spinner.classList.add('hidden');
+    btn.disabled = false; label.textContent = 'Buscar video'; spinner.classList.add('hidden');
   }
 });
 
-$('btn-confirm-add-video').addEventListener('click',async()=>{
-  const videoData=JSON.parse($('btn-fetch-video').dataset.videoData||'null');
-  if(!videoData){ $('modal-error').textContent='Primero busca un video.'; $('modal-error').classList.remove('hidden'); return; }
-
-  let listId=$('modal-list-select').value;
-  if(listId==='__new__'){
-    const name=prompt('Nombre de la nueva lista:','');
-    if(!name?.trim()) return;
-    const newList=createList(name.trim());
-    listId=newList.id;
+$('btn-confirm-add-video').addEventListener('click', async () => {
+  const videoData = JSON.parse($('btn-fetch-video').dataset.videoData || 'null');
+  if (!videoData) { $('modal-error').textContent = 'Primero busca un video.'; $('modal-error').classList.remove('hidden'); return; }
+  let listId = $('modal-list-select').value;
+  if (listId === '__new__') {
+    const name = prompt('Nombre de la nueva lista:', '');
+    if (!name?.trim()) return;
+    const newList = createList(name.trim());
+    listId = newList.id;
     populateModalListSelect(listId);
   }
-  addVideoToList(listId,videoData);
+  addVideoToList(listId, videoData);
   closeModal();
 });
 
 // ── Cargar videos ─────────────────────────────────────────────────────────────
-async function loadVideos(reset=false){
-  if(state.loading) return;
-  state.loading=true;
-  if(reset){
-    state.rawVideos=[]; state.offset=0; state.hasMore=false;
-    $('videos-grid').innerHTML='';
-    $('featured-section').innerHTML=''; $('featured-section').classList.add('hidden');
+async function loadVideos(reset = false) {
+  if (state.loading) return;
+  state.loading = true;
+  if (reset) {
+    state.rawVideos = []; state.offset = 0; state.hasMore = false;
+    $('videos-grid').innerHTML = '';
+    $('featured-section').innerHTML = ''; $('featured-section').classList.add('hidden');
+    $('filter-bar').classList.add('hidden');
   }
   showLoading(true); hideStates();
   try {
-    const token=await getToken();
-    const params=new URLSearchParams({offset:String(state.offset),limit:'20',weights:JSON.stringify(state.weights),keywords:JSON.stringify(state.keywords)});
-    const t=logger.time('/api/videos');
-    const res=await fetch(`/api/videos?${params}`,{headers:{'Authorization':`Bearer ${token}`}});
-    if(!res.ok){
-      if(res.status===401){ logger.warn('401 en /api/videos, cerrando sesión'); await signOut(auth); return; }
-      const d=await res.json().catch(()=>({})); throw new Error(d.error||`Error ${res.status}`);
+    const token  = await getToken();
+    const params = new URLSearchParams({
+      offset:   String(state.offset),
+      limit:    '20',
+      weights:  JSON.stringify(state.weights),
+      keywords: JSON.stringify(state.keywords),
+    });
+    const t   = logger.time('/api/videos');
+    const res = await fetch(`/api/videos?${params}`, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!res.ok) {
+      if (res.status === 401) { logger.warn('401 en /api/videos, cerrando sesión'); await signOut(auth); return; }
+      const d = await res.json().catch(() => ({})); throw new Error(d.error || `Error ${res.status}`);
     }
-    const { videos, total, hasMore }=await res.json();
+    const { videos, total, hasMore } = await res.json();
     t.end({ returned: videos.length, total, offset: state.offset });
-    state.hasMore=hasMore; state.offset+=videos.length; state.rawVideos.push(...videos);
-    const adjusted=applyFeedback(videos);
-    if(reset&&total===0){ showEmpty(); return; }
-    if(reset&&adjusted.length>0){ renderFeatured(adjusted[0]); renderGrid(adjusted.slice(1),true); }
-    else renderGrid(adjusted,false);
-    $('load-more-area').classList.toggle('hidden',!hasMore);
-    // Mostrar siempre el botón "Agregar video"
+
+    state.hasMore = hasMore;
+    state.offset += videos.length;
+    state.rawVideos.push(...videos);
+
+    const adjusted = applyFeedback(videos);
+    if (reset && total === 0) { showEmpty(); return; }
+
+    if (reset && adjusted.length > 0) {
+      renderFeatured(adjusted[0]);
+      renderGrid(adjusted.slice(1), true);
+    } else {
+      renderGrid(adjusted, false);
+    }
+
+    $('load-more-area').classList.toggle('hidden', !hasMore);
     $('add-video-bar').classList.remove('hidden');
-  } catch(err) {
+
+    // Mostrar filter bar una vez que hay videos
+    if (state.rawVideos.length > 0) $('filter-bar').classList.remove('hidden');
+
+  } catch (err) {
     showError(err.message);
   } finally {
-    state.loading=false; showLoading(false);
+    state.loading = false; showLoading(false);
   }
 }
 
-$('btn-load-more').addEventListener('click',()=>loadVideos(false));
-$('btn-retry').addEventListener('click',()=>loadVideos(true));
+$('btn-load-more').addEventListener('click', () => loadVideos(false));
+$('btn-retry').addEventListener('click', () => loadVideos(true));
 
 // ── Renderizar ────────────────────────────────────────────────────────────────
-function renderFeatured(v){
-  const sec=$('featured-section'); sec.innerHTML=''; sec.appendChild(buildFeaturedCard(v)); sec.classList.remove('hidden');
-}
-function renderGrid(videos,reset){
-  const grid=$('videos-grid'); if(reset) grid.innerHTML='';
-  videos.forEach(v=>grid.appendChild(buildVideoCard(v)));
+function renderFeatured(v) {
+  const sec = $('featured-section');
+  sec.innerHTML = '';
+  sec.appendChild(buildFeaturedCard(v));
+  sec.classList.remove('hidden');
 }
 
-function buildFeaturedCard(v){
-  const a=document.createElement('a');
-  a.className='featured-card'; a.href=v.url; a.target='_blank'; a.rel='noopener noreferrer';
-  a.id=`card-${v.video_id}`; a.setAttribute('role','listitem');
-  a.innerHTML=`
+function renderGrid(videos, reset) {
+  const grid = $('videos-grid');
+  if (reset) grid.innerHTML = '';
+  videos.forEach(v => grid.appendChild(buildVideoCard(v)));
+}
+
+function buildFeaturedCard(v) {
+  const a    = document.createElement('a');
+  a.className = 'featured-card';
+  a.href      = v.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  a.id        = `card-${v.video_id}`;
+  a.setAttribute('role', 'listitem');
+  a.innerHTML = `
     <span class="featured-badge">🏆 Joya #1</span>
-    ${v.thumbnail_url?`<img class="featured-thumb" src="${esc(v.thumbnail_url)}" alt="${esc(v.title)}" loading="lazy">`:`<div class="featured-thumb video-thumb-placeholder">▶</div>`}
+    ${v.thumbnail_url ? `<img class="featured-thumb" src="${esc(v.thumbnail_url)}" alt="${esc(v.title)}" loading="lazy">` : `<div class="featured-thumb video-thumb-placeholder">▶</div>`}
     <div class="featured-info">
       <div class="video-title">${esc(v.title)}</div>
-      <div class="video-meta"><span class="video-channel">${esc(v.channel_title)}</span><span class="video-views">${fmtViews(v.view_count)} vistas</span><span>${fmtDuration(v.duration_s)}</span></div>
+      <div class="video-meta">
+        <span class="video-channel">${esc(v.channel_title)}</span>
+        <span class="video-views">${fmtViews(v.view_count)} vistas</span>
+        <span>${fmtDuration(v.duration_s)}</span>
+      </div>
       <div class="video-score-row" style="margin-top:.75rem;gap:.5rem">
-        <span class="${scoreBadgeClass(v.score)} score-badge">Score ${(v.score*100).toFixed(0)}</span>
-        ${v.breakdown?.captions?'<span class="captions-badge">CC</span>':''}
-        <span class="clicks-badge${(v.clicks||0)===0?' hidden':''}" id="clk-${v.video_id}">${v.clicks||0} clic${(v.clicks||0)!==1?'s':''}</span>
+        <span class="${scoreBadgeClass(v.score)} score-badge score-badge--clickable" data-video-id="${v.video_id}">Score ${(v.score * 100).toFixed(0)}</span>
+        ${v.breakdown?.captions ? '<span class="captions-badge">CC</span>' : ''}
+        <span class="clicks-badge${(v.clicks || 0) === 0 ? ' hidden' : ''}" id="clk-${v.video_id}">${v.clicks || 0} clic${(v.clicks || 0) !== 1 ? 's' : ''}</span>
       </div>
     </div>`;
   a.appendChild(buildDismissBtn(v.video_id));
   a.appendChild(buildBookmarkBtn(v));
-  a.addEventListener('click',e=>{ if(e.target.closest('.btn-dismiss,.btn-bookmark')) return; trackClick(v.video_id); });
+  a.addEventListener('click', e => {
+    if (e.target.closest('.btn-dismiss,.btn-bookmark')) return;
+    if (e.target.closest('.score-badge--clickable')) { e.preventDefault(); return; }
+    trackClick(v.video_id);
+  });
+  wireScorebadge(a, v);
   return a;
 }
 
-function buildVideoCard(v){
-  const a=document.createElement('a');
-  a.className='video-card'; a.href=v.url; a.target='_blank'; a.rel='noopener noreferrer';
-  a.id=`card-${v.video_id}`; a.setAttribute('role','listitem');
-  a.innerHTML=`
+function buildVideoCard(v) {
+  const a    = document.createElement('a');
+  a.className = 'video-card';
+  a.href      = v.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  a.id        = `card-${v.video_id}`;
+  a.setAttribute('role', 'listitem');
+  a.innerHTML = `
     <div class="video-thumb-wrap">
-      ${v.thumbnail_url?`<img class="video-thumb" src="${esc(v.thumbnail_url)}" alt="${esc(v.title)}" loading="lazy">`:`<div class="video-thumb-placeholder">▶</div>`}
+      ${v.thumbnail_url ? `<img class="video-thumb" src="${esc(v.thumbnail_url)}" alt="${esc(v.title)}" loading="lazy">` : `<div class="video-thumb-placeholder">▶</div>`}
       <span class="video-duration">${fmtDuration(v.duration_s)}</span>
     </div>
     <div class="video-info">
       <div class="video-title">${esc(v.title)}</div>
-      <div class="video-meta"><span class="video-channel">${esc(v.channel_title)}</span><span class="video-views">${fmtViews(v.view_count)}</span></div>
+      <div class="video-meta">
+        <span class="video-channel">${esc(v.channel_title)}</span>
+        <span class="video-views">${fmtViews(v.view_count)}</span>
+      </div>
       <div class="video-score-row">
-        <span class="${scoreBadgeClass(v.score)} score-badge">Score ${(v.score*100).toFixed(0)}</span>
+        <span class="${scoreBadgeClass(v.score)} score-badge score-badge--clickable" data-video-id="${v.video_id}">Score ${(v.score * 100).toFixed(0)}</span>
         <div style="display:flex;gap:.3rem;align-items:center">
-          ${v.breakdown?.captions?'<span class="captions-badge">CC</span>':''}
-          <span class="clicks-badge${(v.clicks||0)===0?' hidden':''}" id="clk-${v.video_id}">${v.clicks||0} clic${(v.clicks||0)!==1?'s':''}</span>
+          ${v.breakdown?.captions ? '<span class="captions-badge">CC</span>' : ''}
+          <span class="clicks-badge${(v.clicks || 0) === 0 ? ' hidden' : ''}" id="clk-${v.video_id}">${v.clicks || 0} clic${(v.clicks || 0) !== 1 ? 's' : ''}</span>
         </div>
       </div>
     </div>`;
   a.appendChild(buildDismissBtn(v.video_id));
   a.appendChild(buildBookmarkBtn(v));
-  a.addEventListener('click',e=>{ if(e.target.closest('.btn-dismiss,.btn-bookmark')) return; trackClick(v.video_id); });
+  a.addEventListener('click', e => {
+    if (e.target.closest('.btn-dismiss,.btn-bookmark')) return;
+    if (e.target.closest('.score-badge--clickable')) { e.preventDefault(); return; }
+    trackClick(v.video_id);
+  });
+  wireScorebadge(a, v);
   return a;
 }
 
-function buildDismissBtn(videoId){
-  const btn=document.createElement('button');
-  btn.className='btn-dismiss'; btn.title='No me interesa'; btn.type='button'; btn.innerHTML='×';
-  btn.addEventListener('click',e=>{ e.preventDefault(); e.stopPropagation(); dismissVideo(videoId); });
+function wireScorebadge(cardEl, v) {
+  if (!v.breakdown) return;
+  const badge = cardEl.querySelector('.score-badge--clickable');
+  if (!badge) return;
+  badge.addEventListener('mouseenter', () => showScorePopover(badge, v.breakdown));
+  badge.addEventListener('mouseleave', hideScorePopover);
+  badge.addEventListener('click', e => {
+    e.preventDefault(); e.stopPropagation();
+    if (scorePopover.classList.contains('hidden')) {
+      showScorePopover(badge, v.breakdown);
+    } else {
+      scorePopover.classList.add('hidden');
+    }
+  });
+}
+
+function buildDismissBtn(videoId) {
+  const btn = document.createElement('button');
+  btn.className   = 'btn-dismiss';
+  btn.title       = 'No me interesa';
+  btn.type        = 'button';
+  btn.innerHTML   = '×';
+  btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); dismissVideo(videoId); });
   return btn;
 }
 
-function buildBookmarkBtn(videoData){
-  const btn=document.createElement('button');
-  btn.className='btn-bookmark'; btn.title='Guardar en lista'; btn.type='button';
-  btn.innerHTML=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
-  btn.addEventListener('click',e=>{
+function buildBookmarkBtn(videoData) {
+  const btn = document.createElement('button');
+  btn.className = 'btn-bookmark';
+  btn.title     = 'Guardar en lista';
+  btn.type      = 'button';
+  btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
+  btn.addEventListener('click', e => {
     e.preventDefault(); e.stopPropagation();
-    if(!state.lists.length){ promptCreateList(); return; }
-    showListDropdown(btn,videoData);
+    if (!state.lists.length) { promptCreateList(); return; }
+    showListDropdown(btn, videoData);
   });
   return btn;
 }
 
 // ── Estado UI ─────────────────────────────────────────────────────────────────
-function showLoading(show){ $('loading').classList.toggle('hidden',!show); }
-function hideStates(){
+function showLoading(show) { $('loading').classList.toggle('hidden', !show); }
+function hideStates() {
   $('empty-state').classList.add('hidden');
   $('error-state').classList.add('hidden');
   $('load-more-area').classList.add('hidden');
 }
-function showEmpty(){ $('empty-state').classList.remove('hidden'); }
-function showError(msg){ $('error-state-msg').textContent=msg; $('error-state').classList.remove('hidden'); }
+function showEmpty()      { $('empty-state').classList.remove('hidden'); }
+function showError(msg)   { $('error-state-msg').textContent = msg; $('error-state').classList.remove('hidden'); }
 
 // ── Perfil al estado ──────────────────────────────────────────────────────────
-function applyProfileToState(profile){
-  state.userProfile=profile;
-  // Sincronizar textarea inline del panel de parámetros
-  const inline=$('profile-desc-inline');
-  if(inline && profile.description) inline.value=profile.description;
-  if(profile.interest_keywords?.length) { state.keywords=profile.interest_keywords; renderKeywordChips(); }
-  if(profile.feedback) state.feedback=profile.feedback;
-  if(profile.lists) state.lists=profile.lists;
-  if(profile.listItems) state.listItems=profile.listItems;
-  // Asegurar que cada lista tiene su objeto en listItems
-  state.lists.forEach(l=>{ if(!state.listItems[l.id]) state.listItems[l.id]={}; });
-  if(profile.weights){
-    Object.assign(state.weights,profile.weights);
-    WEIGHT_KEYS.forEach(k=>{ const s=$(`w-${k}`),o=$(`w-${k}-val`); if(s&&state.weights[k]!==undefined){s.value=state.weights[k];o.textContent=state.weights[k];} });
+function applyProfileToState(profile) {
+  state.userProfile = profile;
+  const inline = $('profile-desc-inline');
+  if (inline && profile.description) inline.value = profile.description;
+  if (profile.interest_keywords?.length) { state.keywords = profile.interest_keywords; renderKeywordChips(); }
+  if (profile.feedback)   state.feedback   = profile.feedback;
+  if (profile.lists)      state.lists      = profile.lists;
+  if (profile.listItems)  state.listItems  = profile.listItems;
+  state.lists.forEach(l => { if (!state.listItems[l.id]) state.listItems[l.id] = {}; });
+  if (profile.weights) {
+    Object.assign(state.weights, profile.weights);
+    WEIGHT_KEYS.forEach(k => {
+      const s = $(`w-${k}`), o = $(`w-${k}-val`);
+      if (s && state.weights[k] !== undefined) { s.value = state.weights[k]; o.textContent = state.weights[k]; }
+    });
     updateWeightsSum();
   }
-  if(profile.settings){
-    const s=profile.settings;
-    if(s.mode){ state.mode=s.mode; $('mode-select').value=s.mode; syncModeCards(s.mode); }
-    if(s.duration_min){ state.durMin=s.duration_min; $('dur-min').value=s.duration_min; $('dur-min-val').textContent=s.duration_min; }
-    if(s.duration_max){ state.durMax=s.duration_max; $('dur-max').value=s.duration_max; $('dur-max-val').textContent=s.duration_max; }
+  if (profile.settings) {
+    const s = profile.settings;
+    if (s.mode)         { state.mode    = s.mode;         $('mode-select').value = s.mode;     syncModeCards(s.mode); }
+    if (s.duration_min) { state.durMin  = s.duration_min; $('dur-min').value = s.duration_min; $('dur-min-val').textContent = s.duration_min; }
+    if (s.duration_max) { state.durMax  = s.duration_max; $('dur-max').value = s.duration_max; $('dur-max-val').textContent = s.duration_max; }
   }
 }
+
+// ── Cerrar popover al hacer scroll ────────────────────────────────────────────
+window.addEventListener('scroll', () => scorePopover.classList.add('hidden'), { passive: true });
 
 // ── Inicialización final ──────────────────────────────────────────────────────
 updateWeightsSum();
 wireKeywordsUI();
 
-// getRedirectResult: completa el flujo cuando el usuario regresa de Google.
-// No necesita hacer nada especial — onAuthStateChanged recibirá al usuario automáticamente.
 getRedirectResult(auth).catch(err => {
   if (err.code !== 'auth/no-auth-event') {
     logger.error('getRedirectResult falló', { code: err.code, msg: err.message });
@@ -935,21 +1174,18 @@ getRedirectResult(auth).catch(err => {
   }
 });
 
-// onAuthStateChanged: ÚNICA fuente de verdad del estado de autenticación.
-// Declarado aquí (al final) para garantizar que todos los const están inicializados.
+// onAuthStateChanged al FINAL del módulo: todos los const ya están inicializados.
 onAuthStateChanged(auth, async user => {
   state.user = user;
 
   if (!user) {
-    Object.assign(state, { userProfile:null, idToken:null, feedback:{}, lists:[], listItems:{} });
+    Object.assign(state, { userProfile: null, idToken: null, feedback: {}, lists: [], listItems: {} });
     showScreen('screen-login');
     return;
   }
 
-  // Cargar perfil del usuario — cualquier error va a onboarding, nunca al login
   try {
     state.idToken = await user.getIdToken();
-
     let snap = null;
     try { snap = await getDoc(doc(db, 'users', user.uid)); }
     catch { showScreen('screen-onboard'); return; }
@@ -967,4 +1203,4 @@ onAuthStateChanged(auth, async user => {
   }
 });
 
-logger.info('App lista');
+logger.info('App lista', { v: '2.0' });

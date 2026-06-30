@@ -1,45 +1,30 @@
 /**
  * youtube.js – Cliente para YouTube Data API v3.
  * Funciones puras: reciben apiKey, devuelven datos crudos de YouTube.
- * Se usa tanto en el seed script (Node) como en Workers (si se necesita crawl futuro).
  */
 
 const YT_BASE = 'https://www.googleapis.com/youtube/v3';
 
-/** search.list – 100 unidades por llamada */
 export async function searchVideos(apiKey, query, maxResults = 10) {
   const params = new URLSearchParams({
-    key: apiKey,
-    q: query,
-    type: 'video',
-    part: 'snippet',
-    order: 'relevance',
-    maxResults: String(Math.min(maxResults, 50)),
-    // Sin filtro de duración: queremos el rango completo y filtramos después
+    key: apiKey, q: query, type: 'video', part: 'snippet',
+    order: 'relevance', maxResults: String(Math.min(maxResults, 50)),
   });
-
   const res = await fetch(`${YT_BASE}/search?${params}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(`YouTube search.list falló (${res.status}): ${JSON.stringify(err?.error?.message || '')}`);
   }
-  const data = await res.json();
-  return data.items || [];
+  return (await res.json()).items || [];
 }
 
-/**
- * videos.list – 1 unidad por lote de 50.
- * Devuelve estadísticas + contentDetails + snippet completo.
- */
 export async function enrichVideos(apiKey, videoIds) {
   if (!videoIds.length) return [];
   const results = [];
-
   for (let i = 0; i < videoIds.length; i += 50) {
-    const batch = videoIds.slice(i, i + 50);
+    const batch  = videoIds.slice(i, i + 50);
     const params = new URLSearchParams({
-      key: apiKey,
-      id: batch.join(','),
+      key: apiKey, id: batch.join(','),
       part: 'statistics,contentDetails,snippet',
     });
     const res = await fetch(`${YT_BASE}/videos?${params}`);
@@ -47,37 +32,30 @@ export async function enrichVideos(apiKey, videoIds) {
       const err = await res.json().catch(() => ({}));
       throw new Error(`YouTube videos.list falló (${res.status}): ${JSON.stringify(err?.error?.message || '')}`);
     }
-    const data = await res.json();
-    results.push(...(data.items || []));
+    results.push(...((await res.json()).items || []));
   }
   return results;
 }
 
-/** channels.list – 1 unidad por lote de 50 */
 export async function enrichChannels(apiKey, channelIds) {
   const unique = [...new Set(channelIds.filter(Boolean))];
   if (!unique.length) return [];
   const results = [];
-
   for (let i = 0; i < unique.length; i += 50) {
-    const batch = unique.slice(i, i + 50);
+    const batch  = unique.slice(i, i + 50);
     const params = new URLSearchParams({
-      key: apiKey,
-      id: batch.join(','),
-      part: 'snippet,statistics',
+      key: apiKey, id: batch.join(','), part: 'snippet,statistics',
     });
     const res = await fetch(`${YT_BASE}/channels?${params}`);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(`YouTube channels.list falló (${res.status}): ${JSON.stringify(err?.error?.message || '')}`);
     }
-    const data = await res.json();
-    results.push(...(data.items || []));
+    results.push(...((await res.json()).items || []));
   }
   return results;
 }
 
-/** Convierte duración ISO 8601 (PT1H2M3S) a segundos */
 export function parseDuration(isoDuration) {
   if (!isoDuration) return 0;
   const m = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
@@ -85,39 +63,27 @@ export function parseDuration(isoDuration) {
   return (parseInt(m[1] || 0) * 3600) + (parseInt(m[2] || 0) * 60) + parseInt(m[3] || 0);
 }
 
-/** Detecta si la descripción contiene timestamps de capítulos */
 export function detectChapters(description) {
   if (!description) return false;
-  // Líneas que empiezan con un timestamp tipo "0:00", "1:23", "1:23:45"
   return /(?:^|\n)\s*\d{1,2}:\d{2}(?::\d{2})?/.test(description);
 }
 
-/** Calcula cuota usada por una ronda de seed */
 export function estimateQuota({ searches, videoCount, channelCount }) {
-  const searchUnits  = searches * 100;
-  const videosUnits  = Math.ceil(videoCount  / 50);
-  const channelUnits = Math.ceil(channelCount / 50);
-  return searchUnits + videosUnits + channelUnits;
+  return searches * 100 + Math.ceil(videoCount / 50) + Math.ceil(channelCount / 50);
 }
 
-/**
- * Formatea el resultado crudo de YouTube en el objeto que espera la BD.
- * channelMap: { channelId → channelData }
- */
 export function formatVideo(item, channelMap, query, scoreBase = 0) {
   const s  = item.snippet        || {};
   const st = item.statistics     || {};
   const cd = item.contentDetails || {};
-
-  const channelId = s.channelId || '';
-  const ch = channelMap[channelId] || {};
+  const ch = channelMap[s.channelId || ''] || {};
 
   return {
     video_id:         item.id,
     title:            s.title            || '',
-    channel_id:       channelId,
+    channel_id:       s.channelId        || '',
     channel_title:    s.channelTitle     || '',
-    description:      (s.description    || '').slice(0, 2000), // truncar para D1
+    description:      (s.description    || '').slice(0, 2000),
     published_at:     s.publishedAt      || '',
     duration_seconds: parseDuration(cd.duration),
     view_count:       parseInt(st.viewCount    || 0),
@@ -134,7 +100,7 @@ export function formatVideo(item, channelMap, query, scoreBase = 0) {
 }
 
 export function formatChannel(item) {
-  const st = item.statistics || {};
+  const st          = item.statistics || {};
   const subscribers = parseInt(st.subscriberCount || 0);
   return {
     channel_id:       item.id,

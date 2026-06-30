@@ -38,10 +38,10 @@ export const DEPTH_KEYWORDS = [
 // Pesos por defecto (deben sumar 100)
 export const WEIGHTS_DEFAULT = {
   engagement: 35,   // ratio like/view, comment/view — no vistas absolutas
-  relevance: 25,    // overlap keywords usuario con título/desc
-  depth:     15,    // DEPTH_KEYWORDS + capítulos/timestamps
-  duration:  10,    // sweet spot 8-60 min, decae fuera
-  captions:   5,    // contentDetails.caption == true
+  relevance:  25,   // overlap keywords usuario con título/desc
+  depth:      15,   // DEPTH_KEYWORDS + capítulos/timestamps
+  duration:   10,   // sweet spot 8-60 min, decae fuera
+  captions:    5,   // contentDetails.caption == true
   authority:  10,   // log(suscriptores), capeado, no dominante
 };
 

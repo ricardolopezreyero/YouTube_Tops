@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- RLR · EYE·181218 -->
 <html lang="es">
 <head>
   <meta charset="UTF-8">
@@ -44,7 +45,6 @@
         <h1 class="ob-headline">YouTube sin el algoritmo<br>de retención</h1>
         <p class="ob-sub">Los mejores videos para aprender, crecer y actuar.<br>Rankeados según TU perfil, no el de todos.</p>
 
-        <!-- Comparación -->
         <div class="ob-compare">
           <div class="ob-compare-col ob-compare-bad">
             <div class="ob-compare-label">YouTube normal</div>
@@ -66,7 +66,6 @@
           </div>
         </div>
 
-        <!-- Features -->
         <div class="ob-features">
           <div class="ob-feature">
             <span class="ob-feature-icon">🏆</span>
@@ -186,7 +185,7 @@
       <div class="params-inner">
         <h3>Parámetros de ranking</h3>
 
-        <!-- ── Perfil (inline, siempre visible) ── -->
+        <!-- Perfil inline -->
         <section class="params-section params-section--profile">
           <h4>Mi perfil</h4>
           <p class="params-profile-hint">La IA re-derivará tus keywords y reordenará el feed.</p>
@@ -202,13 +201,13 @@
 
         <div class="params-divider"></div>
 
-        <!-- ── Mis intereses (keywords editables) ── -->
+        <!-- Mis intereses -->
         <section class="params-section">
           <div class="params-section-header">
             <h4>Mis intereses</h4>
             <span id="kw-count-badge" class="badge badge--ok">0 temas</span>
           </div>
-          <p class="params-profile-hint">Estos temas mueven el <strong>25% de tu score</strong> de relevancia. Edítalos para afinar tu feed.</p>
+          <p class="params-profile-hint">Estos temas mueven el <strong>25% de tu score</strong> de relevancia.</p>
 
           <div id="keywords-chips" class="keywords-chips"></div>
 
@@ -233,7 +232,7 @@
 
         <div class="params-divider"></div>
 
-        <!-- ── Pesos ── -->
+        <!-- Pesos -->
         <section class="params-section">
           <div class="params-section-header">
             <h4>Pesos del score</h4>
@@ -247,18 +246,17 @@
           <div class="slider-row"><label for="w-authority">Autoridad</label><input type="range" id="w-authority" min="0" max="40" value="10"><output id="w-authority-val" for="w-authority">10</output><span>%</span></div>
         </section>
 
-        <!-- ── Duración ── -->
+        <!-- Duración -->
         <section class="params-section">
           <h4>Duración de video</h4>
           <div class="slider-row"><label for="dur-min">Mínimo</label><input type="range" id="dur-min" min="1" max="30" value="8"><output id="dur-min-val" for="dur-min">8</output><span>min</span></div>
           <div class="slider-row"><label for="dur-max">Máximo</label><input type="range" id="dur-max" min="10" max="180" value="60"><output id="dur-max-val" for="dur-max">60</output><span>min</span></div>
         </section>
 
-        <!-- ── Modo ── -->
+        <!-- Modo -->
         <section class="params-section">
           <h4>Modo</h4>
           <div class="mode-cards" role="radiogroup" aria-label="Modo de ranking">
-
             <button class="mode-card mode-card--active" data-mode="balanced" type="button" role="radio" aria-checked="true">
               <div class="mode-card-header">
                 <span class="mode-card-icon">⚖️</span>
@@ -267,7 +265,6 @@
               </div>
               <p class="mode-card-desc">Mezcla engagement, relevancia y profundidad. Bueno para sesiones generales de aprendizaje.</p>
             </button>
-
             <button class="mode-card" data-mode="depth" type="button" role="radio" aria-checked="false">
               <div class="mode-card-header">
                 <span class="mode-card-icon">🧠</span>
@@ -276,7 +273,6 @@
               </div>
               <p class="mode-card-desc">Prioriza masterclasses, frameworks y videos largos con capítulos. Ideal para aprender algo en serio.</p>
             </button>
-
             <button class="mode-card" data-mode="quick" type="button" role="radio" aria-checked="false">
               <div class="mode-card-header">
                 <span class="mode-card-icon">⚡</span>
@@ -285,9 +281,7 @@
               </div>
               <p class="mode-card-desc">Videos cortos (&lt;15 min) con alto engagement. Para cuando tienes poco tiempo y quieres ideas concretas.</p>
             </button>
-
           </div>
-          <!-- hidden select mantiene compatibilidad con el JS existente -->
           <select id="mode-select" class="hidden" aria-hidden="true">
             <option value="balanced">Balanceado</option>
             <option value="depth">Profundidad máxima</option>
@@ -302,29 +296,25 @@
       </div>
     </aside>
 
-    <!-- Panel de Listas (slide-in desde la derecha) -->
+    <!-- Panel de Listas -->
     <aside id="lists-panel" class="lists-panel hidden" aria-label="Mis listas">
       <div class="lists-panel-inner">
         <div class="lists-panel-header">
           <h3>Mis Listas</h3>
           <button id="btn-close-lists" class="btn-ghost" type="button">✕</button>
         </div>
-        <button id="btn-create-list" class="btn-primary btn-create-list" type="button">
-          + Nueva lista
-        </button>
-        <div id="lists-directory" class="lists-directory">
-          <!-- populated by JS -->
-        </div>
+        <button id="btn-create-list" class="btn-primary btn-create-list" type="button">+ Nueva lista</button>
+        <div id="lists-directory" class="lists-directory"></div>
       </div>
     </aside>
 
-    <!-- Vista principal: HOME o LIST -->
+    <!-- Vista principal -->
     <div class="app-body">
 
-      <!-- ── Home view ──────────────────────────────────────────────── -->
+      <!-- Home view -->
       <div id="home-view" class="videos-wrapper">
 
-        <!-- Filter bar (aparece tras cargar videos) -->
+        <!-- Filter bar -->
         <div id="filter-bar" class="filter-bar hidden">
           <div class="filter-pills" role="group" aria-label="Filtrar por duración">
             <button class="pill pill--active" data-dur="all">Todos</button>
@@ -334,7 +324,7 @@
             <button class="pill" data-dur="deep">&gt;60 min</button>
             <button class="pill pill--toggle" id="pill-unwatched">Solo nuevos</button>
           </div>
-          <button id="btn-session" class="btn-session" type="button" title="Cuéntame cuánto tiempo tienes y armo tu sesión perfecta">
+          <button id="btn-session" class="btn-session" type="button" title="Arma tu sesión perfecta">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             Mi Sesión
           </button>
@@ -360,7 +350,6 @@
         <div id="load-more-area" class="load-more-area hidden">
           <button id="btn-load-more" class="btn-secondary" type="button">Cargar más</button>
         </div>
-        <!-- Agregar video siempre visible al pie del grid -->
         <div id="add-video-bar" class="add-video-bar">
           <button id="btn-open-add-video-bar" class="btn-secondary btn-add-video" type="button">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -369,7 +358,7 @@
         </div>
       </div>
 
-      <!-- ── List view ──────────────────────────────────────────────── -->
+      <!-- List view -->
       <div id="list-view" class="videos-wrapper hidden">
         <div class="list-view-header">
           <button id="btn-back-home" class="btn-back" type="button">
@@ -382,15 +371,12 @@
           </div>
           <button id="btn-delete-list" class="btn-ghost btn-icon-sm btn-danger" type="button" title="Eliminar lista">🗑️</button>
         </div>
-        <div id="list-items-container" class="list-items-container" role="list">
-          <!-- populated by JS -->
-        </div>
+        <div id="list-items-container" class="list-items-container" role="list"></div>
         <div id="list-empty-state" class="state-msg state-msg--empty hidden">
           <p class="state-icon">📋</p>
           <p>Esta lista está vacía.</p>
           <p>Guarda videos con el botón 🔖 en cualquier tarjeta.</p>
         </div>
-        <!-- Agregar video a lista también disponible en la vista de lista -->
         <div class="add-video-bar">
           <button id="btn-open-add-video-list" class="btn-secondary btn-add-video" type="button">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -401,7 +387,7 @@
 
     </div><!-- /.app-body -->
 
-    <!-- Dropdown flotante "Agregar a lista" (shared, se mueve por JS) -->
+    <!-- Dropdown "Agregar a lista" -->
     <div id="list-dropdown" class="list-dropdown hidden" role="menu">
       <div class="list-dropdown-header">Agregar a lista</div>
       <div id="list-dropdown-items" class="list-dropdown-items"></div>
@@ -438,11 +424,11 @@
         <div class="modal-header">
           <div>
             <h3 id="session-title">⏱ Mi Sesión</h3>
-            <p class="session-subtitle">El algoritmo selecciona los mejores videos para tu ventana de tiempo.</p>
+            <p class="session-subtitle">Los mejores videos que caben en tu ventana de tiempo.</p>
           </div>
           <button id="btn-close-session" class="btn-ghost btn-icon-sm" type="button">✕</button>
         </div>
-        <div class="session-time-picker">
+        <div class="session-time-picker" role="group" aria-label="Tiempo disponible">
           <button class="time-preset" data-min="15">15 min</button>
           <button class="time-preset" data-min="30">30 min</button>
           <button class="time-preset time-preset--active" data-min="45">45 min</button>
@@ -452,7 +438,7 @@
         <div id="session-stats" class="session-stats"></div>
         <div id="session-list" class="session-list"></div>
         <div id="session-empty" class="state-msg hidden">
-          <p>Carga más videos para poder armar una sesión.</p>
+          <p>Carga más videos para armar una sesión.</p>
         </div>
         <div class="session-actions">
           <button id="btn-save-session" class="btn-secondary" type="button">💾 Guardar sesión como lista</button>
@@ -460,10 +446,10 @@
       </div>
     </div>
 
-    <!-- Score breakdown popover (compartido) -->
+    <!-- Score breakdown popover -->
     <div id="score-popover" class="score-popover hidden" role="tooltip"></div>
 
-    <!-- Toast de confirmación -->
+    <!-- Toast -->
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   </div><!-- /#screen-app -->

@@ -5,8 +5,6 @@
  * 2. Busca en D1 primero (sin gastar cuota).
  * 3. Si no existe, llama a YouTube videos.list y lo inserta en D1.
  * 4. Devuelve los datos del video listos para mostrar en el cliente.
- *
- * El cliente maneja la adición a la lista (Firestore, sin pasar por aquí).
  */
 
 import { requireAuth } from '../../src/lib/auth.js';
@@ -39,12 +37,9 @@ export async function onRequestPost(context) {
     // ── Buscar en D1 primero ────────────────────────────────────────────────
     const existing = await env.DB
       .prepare('SELECT v.*, c.subscriber_count FROM videos v LEFT JOIN channels c ON v.channel_id = c.channel_id WHERE v.video_id = ?')
-      .bind(videoId)
-      .first();
+      .bind(videoId).first();
 
-    if (existing) {
-      return jsonOk({ video: dbRowToCard(existing), source: 'cache' });
-    }
+    if (existing) return jsonOk({ video: dbRowToCard(existing), source: 'cache' });
 
     // ── No está en D1: llamar a YouTube API ─────────────────────────────────
     const apiKey = env.YOUTUBE_API_KEY;
@@ -58,7 +53,6 @@ export async function onRequestPost(context) {
     const s    = item.snippet        || {};
     const st   = item.statistics     || {};
 
-    // Obtener canal
     let channelData = null;
     if (s.channelId) {
       const chRes = await fetch(
@@ -88,12 +82,14 @@ export async function onRequestPost(context) {
       has_chapters:     hasChapters ? 1 : 0,
       thumbnail_url:    s.thumbnails?.high?.url || s.thumbnails?.default?.url || '',
       url:              `https://www.youtube.com/watch?v=${videoId}`,
-      score_base:       scoreBase({ ...st, duration_seconds: durSecs, has_captions: cd.caption === 'true' ? 1 : 0, has_chapters: hasChapters ? 1 : 0, title: s.title || '', description: s.description || '' }, channelData),
+      score_base:       scoreBase(
+        { ...st, duration_seconds: durSecs, has_captions: cd.caption === 'true' ? 1 : 0, has_chapters: hasChapters ? 1 : 0, title: s.title || '', description: s.description || '' },
+        channelData
+      ),
       discovered_query: 'manual',
       discovered_layer: 1,
     };
 
-    // Insertar en D1
     await env.DB.prepare(`
       INSERT OR REPLACE INTO videos
         (video_id, title, channel_id, channel_title, description, published_at,
@@ -109,7 +105,6 @@ export async function onRequestPost(context) {
       videoRow.url, videoRow.score_base, videoRow.discovered_query, videoRow.discovered_layer
     ).run();
 
-    // Insertar canal
     if (channelData) {
       await env.DB.prepare(`
         INSERT OR REPLACE INTO channels (channel_id, title, subscriber_count, authority_score, updated_at)
@@ -124,9 +119,6 @@ export async function onRequestPost(context) {
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/** Extrae el video_id de distintos formatos de URL de YouTube */
 function extractVideoId(url) {
   if (!url) return null;
   const patterns = [
@@ -140,7 +132,6 @@ function extractVideoId(url) {
     const m = url.match(p);
     if (m) return m[1];
   }
-  // Podría ser sólo el ID directamente
   if (/^[a-zA-Z0-9_-]{11}$/.test(url)) return url;
   return null;
 }
@@ -165,8 +156,7 @@ function jsonOk(data) {
   return new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json', ...CORS } });
 }
 function jsonError(message, status = 500) {
-  return new Response(JSON.stringify({ error: message }),
-    { status, headers: { 'Content-Type': 'application/json', ...CORS } });
+  return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
 }
 function isAuthError(err) {
   const m = err.message.toLowerCase();

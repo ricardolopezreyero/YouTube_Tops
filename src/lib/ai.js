@@ -30,16 +30,9 @@ async function callAI(ai, model, description) {
   });
 }
 
-/**
- * Deriva seeds, keywords y nombres de listas sugeridas.
- * @param {object} ai          - Binding AI de Cloudflare Workers
- * @param {string} description - Texto libre del usuario
- * @returns {{ seeds: string[], keywords: string[], suggested_lists: string[] }}
- */
 export async function deriveProfile(ai, description) {
-  if (!description || description.trim().length < 10) {
+  if (!description || description.trim().length < 10)
     throw new Error('La descripción es demasiado corta para derivar un perfil');
-  }
 
   let responseText = '';
   try {
@@ -62,17 +55,14 @@ export async function deriveProfile(ai, description) {
   try { parsed = JSON.parse(jsonMatch[0]); }
   catch { throw new Error('JSON malformado en respuesta de Workers AI'); }
 
-  if (!Array.isArray(parsed.seeds) || !Array.isArray(parsed.keywords)) {
+  if (!Array.isArray(parsed.seeds) || !Array.isArray(parsed.keywords))
     throw new Error('Respuesta de AI incompleta: faltan seeds o keywords');
-  }
 
-  // Fallback de listas si el modelo no las incluyó
   const defaultLists = ['Ver después', 'Favoritos', 'Comparte esto'];
   const suggestedLists = Array.isArray(parsed.suggested_lists) && parsed.suggested_lists.length >= 1
     ? parsed.suggested_lists.slice(0, 3).map(s => String(s).trim()).filter(Boolean)
     : defaultLists;
 
-  // Completar a 3 si devolvió menos
   while (suggestedLists.length < 3) suggestedLists.push(defaultLists[suggestedLists.length]);
 
   return {

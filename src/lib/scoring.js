@@ -31,37 +31,28 @@ function engagementScore(video) {
 }
 
 function relevanceScore(video, keywords) {
-  if (!keywords || keywords.length === 0) return 0.5; // neutral si no hay keywords
+  if (!keywords || keywords.length === 0) return 0.5;
 
   const text = `${video.title} ${video.description || ''}`.toLowerCase();
-  const hits = keywords.filter(kw => kw && text.includes(kw.toLowerCase())).length;
+  const hits  = keywords.filter(kw => kw && text.includes(kw.toLowerCase())).length;
 
-  // Necesita al menos 30% de overlap para score máximo
   const threshold = Math.max(1, Math.ceil(keywords.length * 0.3));
   return Math.min(1, hits / threshold);
 }
 
 function depthScore(video) {
-  const text = `${video.title} ${video.description || ''}`.toLowerCase();
-
-  const depthHits = DEPTH_KEYWORDS.filter(kw => text.includes(kw.toLowerCase())).length;
-  const hasChapters = video.has_chapters === 1;
-
-  // 3+ keywords de profundidad = máximo en ese subcomponente
-  return Math.min(1, depthHits / 3) * 0.7 + (hasChapters ? 1 : 0) * 0.3;
+  const text     = `${video.title} ${video.description || ''}`.toLowerCase();
+  const hits     = DEPTH_KEYWORDS.filter(kw => text.includes(kw.toLowerCase())).length;
+  const chapters = video.has_chapters === 1;
+  return Math.min(1, hits / 3) * 0.7 + (chapters ? 1 : 0) * 0.3;
 }
 
 function durationScore(video) {
   const dur = video.duration_seconds || 0;
-
-  if (dur < MIN_DURATION)         return 0;                        // demasiado corto
-  if (dur >= DURATION_SWEET[0] && dur <= DURATION_SWEET[1]) return 1.0;  // sweet spot
-
-  if (dur < DURATION_SWEET[0]) {
-    // rampa ascendente: MIN_DURATION → DURATION_SWEET[0]
+  if (dur < MIN_DURATION) return 0;
+  if (dur >= DURATION_SWEET[0] && dur <= DURATION_SWEET[1]) return 1.0;
+  if (dur < DURATION_SWEET[0])
     return (dur - MIN_DURATION) / (DURATION_SWEET[0] - MIN_DURATION);
-  }
-  // rampa descendente: decae 1 → 0 entre 1h y 2h
   return Math.max(0, 1 - (dur - DURATION_SWEET[1]) / DURATION_SWEET[1]);
 }
 
@@ -71,27 +62,15 @@ function captionsScore(video) {
 
 function authorityScore(channel) {
   const subscribers = channel?.subscriber_count || 0;
-  // log10(10M) ≈ 7 → cap a 10M suscriptores
   return Math.min(1, Math.log10(subscribers + 1) / 7);
 }
 
 // ── Función principal ─────────────────────────────────────────────────────────
 
-/**
- * Calcula el score ponderado de un video para un usuario específico.
- *
- * @param {object} video        - Fila de D1 (videos)
- * @param {object} channelData  - { subscriber_count } de channels, puede ser null
- * @param {object} userWeights  - Pesos del usuario (parciales; se mezclan con defaults)
- * @param {string[]} userKeywords - Keywords de interés del usuario
- * @returns {{ total: number, components: object }}
- */
 export function scoreVideo(video, channelData, userWeights = {}, userKeywords = []) {
   const weights = { ...WEIGHTS_DEFAULT, ...userWeights };
-
-  // Normaliza para que siempre sumen a 1, aunque los pesos del usuario no sumen 100
-  const totalW = Object.values(weights).reduce((a, b) => a + b, 0) || 100;
-  const nw = {};
+  const totalW  = Object.values(weights).reduce((a, b) => a + b, 0) || 100;
+  const nw      = {};
   for (const k of Object.keys(weights)) nw[k] = weights[k] / totalW;
 
   const components = {
@@ -124,9 +103,6 @@ export function scoreVideo(video, channelData, userWeights = {}, userKeywords = 
   };
 }
 
-/**
- * Calcula score_base (con WEIGHTS_DEFAULT) para guardar en D1 al ingerir videos.
- */
 export function scoreBase(video, channelData) {
   return scoreVideo(video, channelData, WEIGHTS_DEFAULT, []).total;
 }

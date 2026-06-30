@@ -3,55 +3,45 @@
  * Endpoint protegido con Firebase Auth.
  * Consulta el corpus D1, re-rankea con el perfil del usuario y devuelve la página.
  * NO llama a YouTube.
- *
- * Cloudflare Pages Function: /functions/api/videos.js → ruta /api/videos
  */
 
 import { requireAuth } from '../../src/lib/auth.js';
 import { scoreVideo } from '../../src/lib/scoring.js';
 import { WEIGHTS_DEFAULT, CORPUS_FETCH_LIMIT, PAGE_SIZE } from '../../config.js';
 
-const CORS_HEADERS = {
+const CORS = {
   'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
 export async function onRequestOptions() {
-  return new Response(null, { headers: CORS_HEADERS });
+  return new Response(null, { headers: CORS });
 }
 
 export async function onRequestGet(context) {
   const { request, env } = context;
-
   try {
-    // ── Autenticación ───────────────────────────────────────────────────────
     await requireAuth(request, env);
 
-    const url     = new URL(request.url);
-    const offset  = Math.max(0, parseInt(url.searchParams.get('offset') || '0'));
-    const limit   = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || String(PAGE_SIZE))));
+    const url    = new URL(request.url);
+    const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0'));
+    const limit  = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || String(PAGE_SIZE))));
 
-    // ── Parámetros del usuario ──────────────────────────────────────────────
     let weights  = { ...WEIGHTS_DEFAULT };
     let keywords = [];
 
     const wParam = url.searchParams.get('weights');
     if (wParam) {
-      try { weights = { ...weights, ...JSON.parse(wParam) }; } catch { /* usa defaults */ }
+      try { weights = { ...weights, ...JSON.parse(wParam) }; } catch {}
     }
 
     const kParam = url.searchParams.get('keywords');
     if (kParam) {
-      try {
-        keywords = JSON.parse(kParam);
-      } catch {
-        keywords = kParam.split(',').map(k => k.trim()).filter(Boolean);
-      }
+      try { keywords = JSON.parse(kParam); }
+      catch { keywords = kParam.split(',').map(k => k.trim()).filter(Boolean); }
     }
 
-    // ── Consulta D1 ────────────────────────────────────────────────────────
-    // Trae los mejores videos por score_base (ya ordenados) más datos de canal
     const { results: videos } = await env.DB.prepare(`
       SELECT
         v.video_id, v.title, v.channel_id, v.channel_title,
@@ -66,16 +56,11 @@ export async function onRequestGet(context) {
       LIMIT ?
     `).bind(CORPUS_FETCH_LIMIT).all();
 
-    if (!videos || videos.length === 0) {
+    if (!videos || videos.length === 0)
       return jsonOk({ videos: [], total: 0, hasMore: false });
-    }
 
-    // ── Re-rankear con el perfil del usuario ────────────────────────────────
     const scored = videos.map(video => {
-      const channelData = {
-        subscriber_count: video.subscriber_count || 0,
-        authority_score:  video.channel_authority || 0,
-      };
+      const channelData = { subscriber_count: video.subscriber_count || 0, authority_score: video.channel_authority || 0 };
       const { total, components } = scoreVideo(video, channelData, weights, keywords);
       return {
         video_id:      video.video_id,
@@ -94,39 +79,24 @@ export async function onRequestGet(context) {
 
     scored.sort((a, b) => b.score - a.score);
 
-    const paginated = scored.slice(offset, offset + limit);
-
     return jsonOk({
-      videos:  paginated,
+      videos:  scored.slice(offset, offset + limit),
       total:   scored.length,
       hasMore: offset + limit < scored.length,
     });
 
   } catch (err) {
-    const status = isAuthError(err) ? 401 : 500;
-    return jsonError(err.message, status);
+    return jsonError(err.message, isAuthError(err) ? 401 : 500);
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function jsonOk(data) {
-  return new Response(
-    JSON.stringify(data),
-    { headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } },
-  );
+  return new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json', ...CORS } });
 }
-
 function jsonError(message, status = 500) {
-  return new Response(
-    JSON.stringify({ error: message }),
-    { status, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } },
-  );
+  return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
 }
-
 function isAuthError(err) {
-  const msg = err.message.toLowerCase();
-  return msg.includes('token') || msg.includes('authorization') ||
-         msg.includes('expirado') || msg.includes('inválido') ||
-         msg.includes('ausente');
+  const m = err.message.toLowerCase();
+  return m.includes('token') || m.includes('authorization') || m.includes('expirado') || m.includes('inválido') || m.includes('ausente');
 }

@@ -21,6 +21,6 @@ pages_build_output_dir = "public"
 [vars]
   FIREBASE_PROJECT_ID = "tops-b68a3"
 
-# ─── Triggers (TODO fase posterior) ──────────────────────────────────────────
+# ─── Triggers (fase posterior) ───────────────────────────────────────────────
 # [triggers]
-# crons = ["0 */6 * * *"]   # TODO: crecer corpus en segundo plano cada 6h
+# crons = ["0 */6 * * *"]   # TODO: crecer corpus en background cada 6h
