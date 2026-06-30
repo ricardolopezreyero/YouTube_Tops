@@ -120,10 +120,41 @@
         <!-- ── Modo ── -->
         <section class="params-section">
           <h4>Modo</h4>
-          <select id="mode-select">
-            <option value="balanced">Balanceado (default)</option>
+          <div class="mode-cards" role="radiogroup" aria-label="Modo de ranking">
+
+            <button class="mode-card mode-card--active" data-mode="balanced" type="button" role="radio" aria-checked="true">
+              <div class="mode-card-header">
+                <span class="mode-card-icon">⚖️</span>
+                <span class="mode-card-name">Balanceado</span>
+                <span class="mode-card-check">✓</span>
+              </div>
+              <p class="mode-card-desc">Mezcla engagement, relevancia y profundidad. Bueno para sesiones generales de aprendizaje.</p>
+            </button>
+
+            <button class="mode-card" data-mode="depth" type="button" role="radio" aria-checked="false">
+              <div class="mode-card-header">
+                <span class="mode-card-icon">🧠</span>
+                <span class="mode-card-name">Profundidad</span>
+                <span class="mode-card-check">✓</span>
+              </div>
+              <p class="mode-card-desc">Prioriza masterclasses, frameworks y videos largos con capítulos. Ideal para aprender algo en serio.</p>
+            </button>
+
+            <button class="mode-card" data-mode="quick" type="button" role="radio" aria-checked="false">
+              <div class="mode-card-header">
+                <span class="mode-card-icon">⚡</span>
+                <span class="mode-card-name">Quick wins</span>
+                <span class="mode-card-check">✓</span>
+              </div>
+              <p class="mode-card-desc">Videos cortos (&lt;15 min) con alto engagement. Para cuando tienes poco tiempo y quieres ideas concretas.</p>
+            </button>
+
+          </div>
+          <!-- hidden select mantiene compatibilidad con el JS existente -->
+          <select id="mode-select" class="hidden" aria-hidden="true">
+            <option value="balanced">Balanceado</option>
             <option value="depth">Profundidad máxima</option>
-            <option value="quick">Quick wins (&lt;15 min)</option>
+            <option value="quick">Quick wins</option>
           </select>
         </section>
 

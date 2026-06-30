@@ -350,6 +350,39 @@ textarea:focus {
   height: 1px; background: var(--border); margin: .25rem 0 1.25rem;
 }
 
+/* ── Mode cards ────────────────────────────────────────────────────────────── */
+.mode-cards {
+  display: flex; flex-direction: column; gap: .5rem;
+}
+.mode-card {
+  width: 100%; text-align: left; cursor: pointer;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: .75rem 1rem;
+  transition: border-color var(--t), background var(--t);
+  color: var(--text-primary);
+}
+.mode-card:hover { background: var(--bg-card2); border-color: rgba(255,255,255,.15); }
+.mode-card--active {
+  background: rgba(255,65,54,.07);
+  border-color: var(--accent);
+}
+.mode-card-header {
+  display: flex; align-items: center; gap: .5rem; margin-bottom: .3rem;
+}
+.mode-card-icon { font-size: 1rem; flex-shrink: 0; }
+.mode-card-name { font-weight: 700; font-size: .9375rem; flex: 1; }
+.mode-card-check {
+  color: var(--accent); font-weight: 800; font-size: .9rem;
+  opacity: 0; transition: opacity var(--t);
+}
+.mode-card--active .mode-card-check { opacity: 1; }
+.mode-card-desc {
+  font-size: .8125rem; color: var(--text-muted); line-height: 1.5;
+  margin: 0; padding-left: 1.5rem;
+}
+
 .params-section-header {
   display: flex;
   align-items: center;

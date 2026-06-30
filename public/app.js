@@ -188,6 +188,29 @@ $('dur-min').addEventListener('input',function(){ state.durMin=parseInt(this.val
 $('dur-max').addEventListener('input',function(){ state.durMax=parseInt(this.value); $('dur-max-val').textContent=this.value; });
 $('mode-select').addEventListener('change',function(){ state.mode=this.value; applyModePreset(this.value); });
 
+// Mode cards (visual radio buttons)
+document.querySelectorAll('.mode-card').forEach(card => {
+  card.addEventListener('click', () => {
+    const mode = card.dataset.mode;
+    // Update cards
+    document.querySelectorAll('.mode-card').forEach(c => {
+      c.classList.toggle('mode-card--active', c.dataset.mode === mode);
+      c.setAttribute('aria-checked', String(c.dataset.mode === mode));
+    });
+    // Sync hidden select + apply preset
+    $('mode-select').value = mode;
+    state.mode = mode;
+    applyModePreset(mode);
+  });
+});
+
+function syncModeCards(mode) {
+  document.querySelectorAll('.mode-card').forEach(c => {
+    c.classList.toggle('mode-card--active', c.dataset.mode === mode);
+    c.setAttribute('aria-checked', String(c.dataset.mode === mode));
+  });
+}
+
 function updateWeightsSum(){
   const t=WEIGHT_KEYS.reduce((s,k)=>s+state.weights[k],0);
   weightsSum.textContent=`Σ = ${t}`;
@@ -734,7 +757,7 @@ function applyProfileToState(profile){
   }
   if(profile.settings){
     const s=profile.settings;
-    if(s.mode){ state.mode=s.mode; $('mode-select').value=s.mode; }
+    if(s.mode){ state.mode=s.mode; $('mode-select').value=s.mode; syncModeCards(s.mode); }
     if(s.duration_min){ state.durMin=s.duration_min; $('dur-min').value=s.duration_min; $('dur-min-val').textContent=s.duration_min; }
     if(s.duration_max){ state.durMax=s.duration_max; $('dur-max').value=s.duration_max; $('dur-max-val').textContent=s.duration_max; }
   }
