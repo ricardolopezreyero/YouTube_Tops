@@ -223,6 +223,21 @@ input,textarea,select { font:inherit; color:inherit; }
   background:var(--bg-panel); border-bottom:1px solid var(--border);
   overflow-y:auto; max-height:calc(100dvh - 57px);
 }
+/* En móvil: el panel de listas se fija en pantalla desde el header
+   para no obligar a hacer scroll hasta arriba */
+@media (max-width:768px) {
+  .lists-panel {
+    position:fixed; top:57px; left:0; right:0;
+    z-index:250; max-height:70dvh;
+    border-bottom:none; box-shadow:0 8px 32px rgba(0,0,0,.6);
+    border-radius:0 0 var(--radius) var(--radius);
+  }
+  .params-panel {
+    position:fixed; top:57px; left:0; right:0;
+    z-index:250; max-height:85dvh;
+    border-bottom:none; box-shadow:0 8px 32px rgba(0,0,0,.6);
+  }
+}
 .params-inner, .lists-panel-inner { max-width:680px; margin:0 auto; padding:1.25rem 1.5rem 1.5rem; }
 .params-inner h3, .lists-panel-inner h3 { font-size:1rem; font-weight:700; margin-bottom:1rem; }
 
@@ -343,9 +358,37 @@ input[type="range"] { accent-color:var(--accent); width:100%; cursor:pointer; }
 .list-dir-count { font-size:.75rem; color:var(--text-muted); }
 .lists-empty-hint { text-align:center; color:var(--text-muted); font-size:.8125rem; padding:1rem 0; line-height:1.6; }
 
-/* ── App body / view wrappers ───────────────────────────────────────────────── */
-.app-body        { flex:1; }
-.videos-wrapper  { max-width:1280px; margin:0 auto; padding:1.25rem 1.25rem 2rem; }
+/* ── App body / slide navigation ────────────────────────────────────────────── */
+.app-body {
+  flex:1; overflow:hidden;
+  height:calc(100dvh - 57px); /* 57px header */
+}
+.views-slider {
+  display:flex; width:200%; height:100%;
+  transition:transform .42s cubic-bezier(.4,0,.2,1);
+  will-change:transform;
+}
+.views-slider.in-list { transform:translateX(-50%); }
+
+.view-pane {
+  width:50%; flex-shrink:0;
+  height:100%; overflow-y:auto; overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+}
+
+/* Home pane: padding interno */
+#home-view { padding-bottom:2rem; }
+#home-view > *:not(.filter-bar) {
+  max-width:1280px; margin-left:auto; margin-right:auto;
+  padding-left:1.25rem; padding-right:1.25rem;
+}
+#home-view > .filter-bar { padding-left:1.25rem; padding-right:1.25rem; }
+
+/* List pane: header sticky relativo al pane (no al viewport) */
+.list-view-header { top:0; } /* sticky dentro del pane */
+
+/* Sentinel para infinite scroll */
+.list-sentinel { height:1px; width:100%; }
 
 /* ── Filter bar ─────────────────────────────────────────────────────────────── */
 .filter-bar {

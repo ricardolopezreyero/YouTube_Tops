@@ -193,7 +193,7 @@ function applyRemoteDiff(remote) {
 function animateListCardIn(videoId, data, idx, total) {
   const container = $('list-items-container');
   if (!container) return;
-  const card = buildListItemRow(videoId, data, idx, total);
+  const card = buildListItemRow(videoId, data, idx, total, false, false);
   card.style.opacity = '0';
   card.style.transform = 'translateY(-10px)';
   card.style.transition = 'opacity .28s ease, transform .28s ease';
@@ -697,16 +697,31 @@ function renameList(listId) {
 }
 function persistLists() { persistProfile(); }
 
-// ── Vista de Lista ────────────────────────────────────────────────────────────
+// ── Vista de Lista — slide navigation ────────────────────────────────────────
+const viewsSlider = document.querySelector('.views-slider');
+
 function showListView(listId) {
   const list = state.lists.find(l => l.id === listId); if (!list) return;
   state.currentView = 'list'; state.currentListId = listId;
-  $('home-view').classList.add('hidden'); $('list-view').classList.remove('hidden');
-  $('list-view-name').textContent = list.name; renderListView();
+  closeListsPanel();
+
+  // Pre-render inmediato (antes del slide para que el contenido ya esté ahí)
+  $('list-view-name').textContent = list.name;
+  renderListView();
+
+  // Scroll ambos panes al top antes de animar
+  $('list-view').scrollTop = 0;
+
+  // Slide hacia la izquierda (pane de home queda fuera)
+  requestAnimationFrame(() => viewsSlider.classList.add('in-list'));
 }
+
 function showHomeView() {
   state.currentView = 'home'; state.currentListId = null;
-  $('list-view').classList.add('hidden'); $('home-view').classList.remove('hidden');
+  viewsSlider.classList.remove('in-list');
+  // Limpiar sentinel de infinite scroll al volver
+  _listScrollObserver?.disconnect();
+  _listScrollObserver = null;
 }
 $('btn-back-home').addEventListener('click', showHomeView);
 $('btn-delete-list').addEventListener('click', () => { if (state.currentListId) deleteList(state.currentListId); });
@@ -716,18 +731,23 @@ $('btn-toggle-archived').addEventListener('click', () => {
   renderListView();
 });
 
+const LIST_PAGE = 10; // items por lote en infinite scroll
+let _listScrollObserver = null;
+
 function renderListView() {
   const lid       = state.currentListId;
   const container = $('list-items-container');
   container.innerHTML = '';
+  _listScrollObserver?.disconnect();
+  _listScrollObserver = null;
 
   const all      = Object.entries(state.listItems[lid] || {});
   const active   = all.filter(([, d]) => !d.archived).sort((a, b) => (a[1].order||0) - (b[1].order||0));
   const archived = all.filter(([, d]) =>  d.archived).sort((a, b) => (a[1].order||0) - (b[1].order||0));
 
-  // Botón de archivados en header
-  const toggleBtn   = $('btn-toggle-archived');
-  const countLabel  = $('archived-count-label');
+  // Botón archivados
+  const toggleBtn  = $('btn-toggle-archived');
+  const countLabel = $('archived-count-label');
   if (archived.length > 0) {
     toggleBtn.classList.remove('hidden');
     countLabel.textContent = state.showArchived
@@ -737,22 +757,59 @@ function renderListView() {
     toggleBtn.classList.add('hidden');
   }
 
-  $('list-empty-state').classList.toggle('hidden', active.length > 0 || (state.showArchived && archived.length > 0));
+  $('list-empty-state').classList.toggle('hidden',
+    active.length > 0 || (state.showArchived && archived.length > 0));
 
-  active.forEach(([vid, data], idx) =>
-    container.appendChild(buildListItemRow(vid, data, idx, active.length, false)));
+  // Renderizar primeros 6 con eager, resto con lazy (infinite scroll)
+  const firstBatch = active.slice(0, LIST_PAGE);
+  firstBatch.forEach(([vid, data], idx) =>
+    container.appendChild(buildListItemRow(vid, data, idx, active.length, false, idx < 6)));
 
+  // Infinite scroll para los restantes
+  if (active.length > LIST_PAGE) {
+    setupListInfiniteScroll(container, active, LIST_PAGE);
+  }
+
+  // Archivados (sin infinite scroll — suelen ser pocos)
   if (state.showArchived && archived.length > 0) {
     const divider = document.createElement('div');
     divider.className = 'archived-divider';
     divider.innerHTML = `<span>Archivados</span>`;
     container.appendChild(divider);
     archived.forEach(([vid, data], idx) =>
-      container.appendChild(buildListItemRow(vid, data, idx, archived.length, true)));
+      container.appendChild(buildListItemRow(vid, data, idx, archived.length, true, false)));
   }
 }
 
-function buildListItemRow(videoId, data, idx, total, isArchived = false) {
+function setupListInfiniteScroll(container, items, startOffset) {
+  let offset = startOffset;
+
+  const sentinel = document.createElement('div');
+  sentinel.className = 'list-sentinel';
+  container.appendChild(sentinel);
+
+  _listScrollObserver = new IntersectionObserver(entries => {
+    if (!entries[0].isIntersecting) return;
+
+    const batch = items.slice(offset, offset + LIST_PAGE);
+    batch.forEach(([vid, data], i) =>
+      sentinel.before(buildListItemRow(vid, data, offset + i, items.length, false, false)));
+
+    offset += batch.length;
+    if (offset >= items.length) {
+      _listScrollObserver.disconnect();
+      _listScrollObserver = null;
+      sentinel.remove();
+    }
+  }, {
+    root: $('list-view'),   // scroll container del pane
+    rootMargin: '400px',
+  });
+
+  _listScrollObserver.observe(sentinel);
+}
+
+function buildListItemRow(videoId, data, idx, total, isArchived = false, eager = false) {
   const card = document.createElement('div');
   card.className = `list-card${isArchived ? ' list-card--archived' : ''}`;
   card.id = `listrow-${CSS.escape(videoId)}`;
@@ -763,7 +820,7 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false) {
   card.innerHTML = `
     <a href="${esc(data.url)}" target="_blank" rel="noopener noreferrer" class="list-card-thumb-link">
       ${data.thumbnail_url
-        ? `<img src="${esc(data.thumbnail_url)}" alt="${esc(data.title)}" class="list-card-thumb" loading="lazy">`
+        ? `<img src="${esc(data.thumbnail_url)}" alt="${esc(data.title)}" class="list-card-thumb" loading="${eager ? 'eager' : 'lazy'}">`
         : `<div class="list-card-thumb-placeholder">▶</div>`}
       <span class="list-card-duration">${fmtDuration(data.duration_s)}</span>
       ${isArchived ? '<span class="list-card-archived-badge">Archivado</span>' : '<span class="list-card-play-overlay">▶</span>'}
