@@ -791,7 +791,7 @@ input[type="range"] { accent-color:var(--accent); width:100%; cursor:pointer; }
 .btn-move-list:hover     { background:var(--accent-glow)   !important; color:var(--accent)    !important; border-color:var(--accent)    !important; }
 .btn-remove-from-list    { } /* hereda .btn-list-action */
 
-/* ── Sinopsis ────────────────────────────────────────────────────────────────── */
+/* ── Botón sinopsis en tarjeta de lista ─────────────────────────────────────── */
 .synopsis-section { margin-top:.55rem; }
 
 .btn-synopsis {
@@ -801,24 +801,76 @@ input[type="range"] { accent-color:var(--accent); width:100%; cursor:pointer; }
   border:1px solid var(--border); border-radius:999px; cursor:pointer;
   transition:color var(--t), border-color var(--t), background var(--t);
 }
-.btn-synopsis:hover:not(:disabled) { color:var(--accent); border-color:var(--accent); background:var(--accent-glow); }
-.btn-synopsis:disabled { opacity:.6; cursor:not-allowed; }
-.btn-synopsis-spinner {
-  display:none; width:11px; height:11px;
-  border:1.5px solid var(--border); border-top-color:var(--accent);
-  border-radius:50%; animation:spin .6s linear infinite;
-}
-.btn-synopsis-spinner:not(.hidden) { display:block; }
+.btn-synopsis:hover { color:var(--accent); border-color:var(--accent); background:var(--accent-glow); }
 
-.synopsis-panel {
-  margin-top:.6rem; padding:.8rem 1rem;
-  background:var(--bg-card2); border:1px solid var(--border);
-  border-radius:var(--radius-sm);
-  font-size:.84rem; line-height:1.7; color:var(--text-muted);
+/* Botón morado cuando la sinopsis ya fue generada */
+.btn-synopsis--has-synopsis {
+  color:var(--accent); border-color:var(--accent);
+  background:var(--accent-glow);
 }
-.synopsis-panel p { margin-bottom:.65rem; }
-.synopsis-panel p:last-child { margin-bottom:0; }
-.synopsis-error { color:var(--score-lo); font-size:.8rem; }
+.btn-synopsis--has-synopsis:hover { background:rgba(108,99,255,.28); }
+
+/* ── Modal de sinopsis ───────────────────────────────────────────────────────── */
+.modal-synopsis-card {
+  max-width:540px; padding:0; overflow:hidden;
+}
+
+/* Thumbnail */
+.synopsis-thumb-wrap {
+  position:relative; aspect-ratio:16/9;
+  background:var(--bg-card2); overflow:hidden;
+}
+.synopsis-modal-thumb { width:100%; height:100%; object-fit:cover; display:block; }
+.synopsis-thumb-overlay {
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  background:rgba(0,0,0,.35); opacity:0; transition:opacity var(--t);
+}
+.synopsis-thumb-wrap:hover .synopsis-thumb-overlay { opacity:1; }
+.btn-synopsis-watch {
+  display:flex; align-items:center; gap:.5rem;
+  padding:.7rem 1.4rem; background:rgba(255,255,255,.92); color:#111;
+  border-radius:var(--radius-sm); font-size:.9rem; font-weight:700;
+  transition:background var(--t);
+}
+.btn-synopsis-watch:hover { background:#fff; }
+
+/* X cerrar sobre thumbnail */
+.synopsis-close-x {
+  position:absolute; top:.6rem; right:.6rem;
+  width:28px; height:28px; border-radius:50%;
+  background:rgba(0,0,0,.6); color:#fff;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; border:none; transition:background var(--t);
+}
+.synopsis-close-x:hover { background:rgba(0,0,0,.85); }
+
+/* Cuerpo */
+.synopsis-modal-body {
+  padding:1.1rem 1.4rem 1rem;
+  max-height:45dvh; overflow-y:auto;
+}
+.synopsis-modal-title {
+  font-size:.975rem; font-weight:700; line-height:1.4; margin-bottom:.25rem;
+}
+.synopsis-modal-channel {
+  font-size:.78rem; color:var(--text-muted); margin-bottom:.9rem;
+}
+.synopsis-modal-loading {
+  display:flex; align-items:center; gap:.65rem;
+  font-size:.85rem; color:var(--text-muted); padding:.5rem 0;
+}
+.synopsis-modal-text { font-size:.875rem; line-height:1.75; color:var(--text-muted); }
+.synopsis-modal-text p              { margin-bottom:.7rem; }
+.synopsis-modal-text p:last-child   { margin-bottom:0; }
+.synopsis-error { color:var(--score-lo); font-size:.82rem; margin-top:.5rem; }
+
+/* Footer */
+.synopsis-modal-footer {
+  display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;
+  padding:.85rem 1.4rem; border-top:1px solid var(--border);
+}
+.synopsis-footer-btn { font-size:.82rem; padding:.45rem .9rem; }
+.synopsis-modal-footer .btn-ghost  { margin-left:auto; }
 
 /* Tarjeta archivada */
 .list-card--archived {

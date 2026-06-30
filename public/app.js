@@ -864,14 +864,11 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
         </p>
 
         <div class="synopsis-section">
-          <button class="btn-synopsis" type="button">
+          <button class="btn-synopsis${data.synopsis ? ' btn-synopsis--has-synopsis' : ''}" type="button"
+                  title="${data.synopsis ? 'Ver sinopsis guardada' : 'Generar sinopsis con IA'}">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-            <span class="btn-synopsis-label">${data.synopsis ? 'Ver sinopsis' : 'Sinopsis'}</span>
-            <span class="btn-synopsis-spinner hidden"></span>
+            ${data.synopsis ? 'Ver sinopsis' : 'Sinopsis'}
           </button>
-          <div id="synopsis-panel-${CSS.escape(videoId)}" class="synopsis-panel hidden">
-            ${data.synopsis ? synopsisToHtml(data.synopsis) : ''}
-          </div>
         </div>
       </div>
 
@@ -912,70 +909,114 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
   }
   card.querySelector('.btn-copy-url').addEventListener('click', () => copyUrl(data.url));
   card.querySelector('.btn-remove-from-list').addEventListener('click', () => removeFromList(state.currentListId, videoId));
-
-  // ── Botón sinopsis ────────────────────────────────────────────────────────
-  card.querySelector('.btn-synopsis').addEventListener('click', async () => {
-    const panel   = $(`synopsis-panel-${CSS.escape(videoId)}`);
-    const btn     = card.querySelector('.btn-synopsis');
-    const label   = btn.querySelector('.btn-synopsis-label');
-    const spinner = btn.querySelector('.btn-synopsis-spinner');
-
-    // Si ya hay sinopsis guardada: toggle visibilidad
-    if (data.synopsis) {
-      const visible = !panel.classList.contains('hidden');
-      panel.classList.toggle('hidden', visible);
-      label.textContent = visible ? 'Ver sinopsis' : 'Ocultar sinopsis';
-      return;
-    }
-
-    // Generar nueva
-    btn.disabled = true;
-    label.textContent = 'Generando…';
-    spinner.classList.remove('hidden');
-
-    try {
-      const { synopsis, error } = await apiFetch('/api/synopsis', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId, title: data.title }),
-      });
-
-      if (error && !synopsis) {
-        panel.innerHTML = `<p class="synopsis-error">${esc(error)}</p>`;
-        panel.classList.remove('hidden');
-        label.textContent = 'Sinopsis';
-        return;
-      }
-
-      // Guardar en state y persistir
-      data.synopsis = synopsis;
-      if (state.currentListId && state.listItems[state.currentListId]?.[videoId])
-        state.listItems[state.currentListId][videoId].synopsis = synopsis;
-      persistLists();
-
-      panel.innerHTML = synopsisToHtml(synopsis);
-      panel.classList.remove('hidden');
-      panel.style.opacity = '0';
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        panel.style.transition = 'opacity .35s ease';
-        panel.style.opacity    = '1';
-      }));
-      label.textContent = 'Ocultar sinopsis';
-    } catch (err) {
-      panel.innerHTML = `<p class="synopsis-error">Error: ${esc(err.message)}</p>`;
-      panel.classList.remove('hidden');
-      label.textContent = 'Reintentar';
-    } finally {
-      btn.disabled = false;
-      spinner.classList.add('hidden');
-    }
-  });
+  card.querySelector('.btn-synopsis').addEventListener('click', () =>
+    openSynopsisModal(videoId, data, state.currentListId));
 
   return card;
 }
 
+// ── Modal de Sinopsis ─────────────────────────────────────────────────────────
+let _synopsisModalContext = null; // { videoId, data, listId }
+
+function openSynopsisModal(videoId, data, listId) {
+  _synopsisModalContext = { videoId, data, listId };
+
+  // Rellenar thumbnail
+  const thumb = $('synopsis-modal-thumb');
+  if (data.thumbnail_url) { thumb.src = data.thumbnail_url; thumb.alt = data.title; }
+
+  // Rellenar título, canal, links
+  $('synopsis-modal-title').textContent   = data.title;
+  $('synopsis-modal-channel').textContent = data.channel_title;
+  $('synopsis-watch-link').href           = data.url;
+  $('synopsis-modal-link').href           = data.url;
+
+  // Limpiar área de texto
+  $('synopsis-modal-text').innerHTML  = '';
+  $('synopsis-modal-error').classList.add('hidden');
+  $('synopsis-modal-loading').classList.add('hidden');
+
+  // Si ya hay sinopsis guardada → mostrar directo
+  if (data.synopsis) {
+    $('synopsis-modal-text').innerHTML = synopsisToHtml(data.synopsis);
+  } else {
+    // Mostrar spinner y generar
+    $('synopsis-modal-loading').classList.remove('hidden');
+    generateSynopsisForModal(videoId, data, listId);
+  }
+
+  $('modal-synopsis').classList.remove('hidden');
+}
+
+async function generateSynopsisForModal(videoId, data, listId) {
+  try {
+    const { synopsis, error } = await apiFetch('/api/synopsis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId, title: data.title }),
+    });
+
+    $('synopsis-modal-loading').classList.add('hidden');
+
+    if (error && !synopsis) {
+      const errEl = $('synopsis-modal-error');
+      errEl.textContent = error;
+      errEl.classList.remove('hidden');
+      return;
+    }
+
+    // Guardar en state y persistir
+    data.synopsis = synopsis;
+    if (listId && state.listItems[listId]?.[videoId]) {
+      state.listItems[listId][videoId].synopsis = synopsis;
+      persistLists();
+    }
+
+    // Actualizar botón en la tarjeta (cambiar color)
+    const card = $(`listrow-${CSS.escape(videoId)}`);
+    if (card) {
+      const btn = card.querySelector('.btn-synopsis');
+      if (btn) {
+        btn.classList.add('btn-synopsis--has-synopsis');
+        btn.title       = 'Ver sinopsis guardada';
+        btn.innerHTML   = btn.innerHTML.replace(/Sinopsis$/, 'Ver sinopsis');
+      }
+    }
+
+    // Mostrar en modal con fade-in
+    const textEl = $('synopsis-modal-text');
+    textEl.innerHTML = synopsisToHtml(synopsis);
+    textEl.style.opacity = '0';
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      textEl.style.transition = 'opacity .3s ease';
+      textEl.style.opacity    = '1';
+    }));
+
+  } catch (err) {
+    $('synopsis-modal-loading').classList.add('hidden');
+    const errEl = $('synopsis-modal-error');
+    errEl.textContent = `Error: ${err.message}`;
+    errEl.classList.remove('hidden');
+  }
+}
+
+function closeSynopsisModal() {
+  $('modal-synopsis').classList.add('hidden');
+  _synopsisModalContext = null;
+}
+
+// Handlers del modal
+$('synopsis-modal-close').addEventListener('click',   closeSynopsisModal);
+$('synopsis-modal-close-x').addEventListener('click', closeSynopsisModal);
+$('modal-synopsis').addEventListener('click', e => {
+  if (e.target === $('modal-synopsis')) closeSynopsisModal();
+});
+$('synopsis-modal-copy').addEventListener('click', () => {
+  if (_synopsisModalContext) copyUrl(_synopsisModalContext.data.url);
+});
+
 function synopsisToHtml(text) {
-  return text.split(/\n\n+/)
+  return (text || '').split(/\n\n+/)
     .filter(p => p.trim())
     .map(p => `<p>${esc(p.trim())}</p>`)
     .join('');

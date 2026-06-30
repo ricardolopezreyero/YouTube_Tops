@@ -440,6 +440,51 @@
       </div>
     </div>
 
+    <!-- Modal: Sinopsis de video -->
+    <div id="modal-synopsis" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="synopsis-modal-title">
+      <div class="modal-card modal-synopsis-card">
+
+        <!-- Thumbnail + play overlay -->
+        <div class="synopsis-thumb-wrap">
+          <img id="synopsis-modal-thumb" class="synopsis-modal-thumb" src="" alt="">
+          <div class="synopsis-thumb-overlay">
+            <a id="synopsis-watch-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-synopsis-watch">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Ver en YouTube
+            </a>
+          </div>
+          <button id="synopsis-modal-close-x" class="synopsis-close-x" type="button" aria-label="Cerrar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <!-- Cuerpo -->
+        <div class="synopsis-modal-body">
+          <h3 id="synopsis-modal-title" class="synopsis-modal-title"></h3>
+          <p  id="synopsis-modal-channel" class="synopsis-modal-channel"></p>
+
+          <div id="synopsis-modal-loading" class="synopsis-modal-loading hidden">
+            <div class="spinner"></div><span>Generando sinopsis…</span>
+          </div>
+          <div id="synopsis-modal-text" class="synopsis-modal-text"></div>
+          <p  id="synopsis-modal-error" class="synopsis-error hidden"></p>
+        </div>
+
+        <!-- Footer -->
+        <div class="synopsis-modal-footer">
+          <button id="synopsis-modal-copy" class="btn-secondary synopsis-footer-btn" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copiar URL
+          </button>
+          <a id="synopsis-modal-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-primary synopsis-footer-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Ver en YouTube
+          </a>
+          <button id="synopsis-modal-close" class="btn-ghost" type="button">Cerrar</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Score breakdown popover -->
     <div id="score-popover" class="score-popover hidden" role="tooltip"></div>
 
