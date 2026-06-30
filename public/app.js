@@ -5,7 +5,8 @@
 
 import {
   auth, db, googleProvider,
-  signInWithPopup, onAuthStateChanged, signOut,
+  signInWithPopup, signInWithRedirect, getRedirectResult,
+  onAuthStateChanged, signOut,
   doc, getDoc, setDoc, updateDoc, serverTimestamp,
 } from './firebase-config.js';
 import { logger } from './logger.js';
@@ -62,16 +63,64 @@ function showScreen(id) {
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
+
+// Errores de popup que deben fallback a redirect
+const POPUP_ERRORS = new Set([
+  'auth/popup-blocked',
+  'auth/popup-closed-by-user',
+  'auth/cancelled-popup-request',
+  'auth/operation-not-supported-in-this-environment',
+  'auth/web-storage-unsupported',
+  'auth/unauthorized-domain',
+]);
+
 $('btn-google-login').addEventListener('click', async () => {
   const btn=$('btn-google-login'), errEl=$('login-error');
-  errEl.classList.add('hidden'); btn.disabled=true;
-  try { await signInWithPopup(auth, googleProvider); }
-  catch(err) { errEl.textContent=`Error al iniciar sesión: ${err.message}`; errEl.classList.remove('hidden'); }
-  finally { btn.disabled=false; }
+  errEl.classList.add('hidden');
+  btn.disabled = true;
+  btn.querySelector('svg')?.nextSibling && (btn.lastChild.textContent = ' Conectando…');
+
+  try {
+    // Intenta popup primero (mejor UX en desktop)
+    await signInWithPopup(auth, googleProvider);
+    logger.info('Auth: login con popup exitoso');
+  } catch(err) {
+    if (POPUP_ERRORS.has(err.code)) {
+      // Popup bloqueado o cerrado → redirigir a Google directamente
+      logger.warn('Popup bloqueado/cerrado, usando redirect', { code: err.code });
+      try {
+        await signInWithRedirect(auth, googleProvider);
+        // La página se redirige a Google, no continúa desde aquí
+      } catch(redirectErr) {
+        errEl.textContent = `Error al iniciar sesión: ${redirectErr.message}`;
+        errEl.classList.remove('hidden');
+        btn.disabled = false;
+      }
+    } else {
+      errEl.textContent = `Error al iniciar sesión: ${err.message}`;
+      errEl.classList.remove('hidden');
+      btn.disabled = false;
+    }
+  }
 });
+
 $('btn-logout').addEventListener('click', () => signOut(auth));
-// onAuthStateChanged se registra al final del módulo (ver initAuth) para garantizar
-// que todos los const del módulo están inicializados antes de que el callback pueda ejecutarse.
+
+// Verificar resultado de redirect al cargar la página
+// (cuando el usuario regresa de Google después de signInWithRedirect)
+getRedirectResult(auth)
+  .then(result => {
+    if (result?.user) {
+      logger.info('Auth: login con redirect completado', { uid: result.user.uid?.slice(0,8) });
+    }
+  })
+  .catch(err => {
+    logger.error('getRedirectResult error', { msg: err.message });
+    // No mostramos error aquí — onAuthStateChanged maneja el estado
+  });
+
+// onAuthStateChanged se registra al final del módulo para garantizar
+// que todos los const del módulo están inicializados.
 
 async function getToken() {
   if (!state.user) throw new Error('No hay usuario autenticado');
