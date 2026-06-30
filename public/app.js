@@ -557,7 +557,6 @@ function populateModalListSelect(preselected){
 
 $('btn-close-modal').addEventListener('click',closeModal);
 $('modal-add-video').addEventListener('click',e=>{ if(e.target===$('modal-add-video')) closeModal(); });
-$('btn-open-add-video').addEventListener('click',()=>openAddVideoModal(null));
 $('btn-open-add-video-bar').addEventListener('click',()=>openAddVideoModal(null));
 $('btn-open-add-video-list').addEventListener('click',()=>openAddVideoModal(state.currentListId));
 

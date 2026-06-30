@@ -684,9 +684,9 @@ select:focus { outline: none; border-color: var(--accent); }
 .load-more-area {
   display: flex;
   justify-content: center;
-  padding: 2rem 1rem 1rem;
+  padding: 2rem 1rem 0;
 }
-.load-more-area .btn-secondary { padding: .75rem 2rem; }
+.load-more-area .btn-secondary { padding: .75rem 2.5rem; }
 
 /* ── Error message ─────────────────────────────────────────────────────────── */
 .error-msg {
@@ -797,7 +797,7 @@ select:focus { outline: none; border-color: var(--accent); }
 /* ── Add video bar ─────────────────────────────────────────────────────────── */
 .add-video-bar {
   display: flex; justify-content: center;
-  padding: 1rem 1rem 2rem;
+  padding: 1.5rem 1rem 3rem;
 }
 .btn-add-video {
   display: inline-flex; align-items: center; gap: .5rem;
