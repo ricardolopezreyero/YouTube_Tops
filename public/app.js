@@ -64,20 +64,40 @@ onAuthStateChanged(auth, async (user) => {
     showScreen('screen-login');
     return;
   }
-  // Refrescar token
-  state.idToken = await user.getIdToken();
 
-  // Leer perfil de Firestore
-  const profileRef = doc(db, 'users', user.uid);
-  const snap = await getDoc(profileRef);
+  try {
+    state.idToken = await user.getIdToken();
 
-  if (!snap.exists() || !snap.data()?.interest_keywords?.length) {
-    showScreen('screen-onboard');
-  } else {
-    state.userProfile = snap.data();
-    applyProfileToState(state.userProfile);
-    showScreen('screen-app');
-    loadVideos(true);
+    // Intentar leer perfil de Firestore
+    // Si las reglas no están desplegadas aún o Firestore falla,
+    // tratamos al usuario como nuevo y mostramos onboarding.
+    let snap = null;
+    try {
+      const profileRef = doc(db, 'users', user.uid);
+      snap = await getDoc(profileRef);
+    } catch (firestoreErr) {
+      console.warn('Firestore no disponible, mostrando onboarding:', firestoreErr.message);
+      showScreen('screen-onboard');
+      return;
+    }
+
+    if (!snap.exists() || !snap.data()?.interest_keywords?.length) {
+      showScreen('screen-onboard');
+    } else {
+      state.userProfile = snap.data();
+      applyProfileToState(state.userProfile);
+      showScreen('screen-app');
+      loadVideos(true);
+    }
+  } catch (err) {
+    // Fallback: si algo falla inesperadamente, regresar a login con mensaje
+    console.error('Error en onAuthStateChanged:', err);
+    const errEl = document.getElementById('login-error');
+    if (errEl) {
+      errEl.textContent = `Error al cargar tu sesión: ${err.message}`;
+      errEl.classList.remove('hidden');
+    }
+    await signOut(auth).catch(() => {});
   }
 });
 
@@ -132,7 +152,7 @@ document.getElementById('btn-save-profile').addEventListener('click', async () =
 
     const { seeds, keywords } = await res.json();
 
-    // Guardar en Firestore
+    // Guardar en Firestore (tolerante a fallos de permisos)
     const profileRef = doc(db, 'users', state.user.uid);
     const profileData = {
       description,
@@ -142,7 +162,13 @@ document.getElementById('btn-save-profile').addEventListener('click', async () =
       settings: { mode: state.mode, duration_min: state.durMin, duration_max: state.durMax },
       updated_at: serverTimestamp(),
     };
-    await setDoc(profileRef, profileData, { merge: true });
+    try {
+      await setDoc(profileRef, profileData, { merge: true });
+    } catch (fsErr) {
+      // Si Firestore rechaza (reglas en producción aún no desplegadas),
+      // continuamos de todas formas — el perfil se guardará en sesión
+      console.warn('Firestore write falló (reglas pendientes):', fsErr.message);
+    }
 
     state.userProfile = profileData;
     state.keywords = keywords;
@@ -234,7 +260,7 @@ document.getElementById('btn-apply-params').addEventListener('click', async () =
       weights:  { ...state.weights },
       settings: { mode: state.mode, duration_min: state.durMin, duration_max: state.durMax },
       updated_at: serverTimestamp(),
-    }).catch(() => {}); // no bloquear si falla
+    }).catch(e => console.warn('updateDoc falló:', e.message)); // no bloquear si falla
   }
   paramsPanel.classList.add('hidden');
   btnParams.setAttribute('aria-expanded', 'false');

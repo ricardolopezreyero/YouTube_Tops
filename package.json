@@ -9,9 +9,11 @@
     "db:migrate": "wrangler d1 migrations apply youtube_tops --remote",
     "db:migrate:local": "wrangler d1 migrations apply youtube_tops --local",
     "seed": "node scripts/seed.js",
-    "cf:login": "wrangler login"
+    "cf:login": "wrangler login",
+    "firebase:rules": "firebase deploy --only firestore:rules"
   },
   "devDependencies": {
+    "firebase-tools": "^15.22.3",
     "wrangler": "^3.101.0"
   },
   "engines": {
