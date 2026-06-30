@@ -202,6 +202,37 @@
 
         <div class="params-divider"></div>
 
+        <!-- ── Mis intereses (keywords editables) ── -->
+        <section class="params-section">
+          <div class="params-section-header">
+            <h4>Mis intereses</h4>
+            <span id="kw-count-badge" class="badge badge--ok">0 temas</span>
+          </div>
+          <p class="params-profile-hint">Estos temas mueven el <strong>25% de tu score</strong> de relevancia. Edítalos para afinar tu feed.</p>
+
+          <div id="keywords-chips" class="keywords-chips"></div>
+
+          <div class="kw-input-row">
+            <input type="text" id="kw-input" class="kw-input" placeholder="Agregar tema…" maxlength="60" autocomplete="off">
+            <button id="btn-add-kw" class="btn-secondary btn-kw-add" type="button" title="Agregar">+</button>
+          </div>
+
+          <button id="btn-suggest-kw" class="btn-suggest-kw" type="button">
+            <span class="btn-label">💡 Sugerir temas que te faltan</span>
+            <span class="btn-spinner hidden"></span>
+          </button>
+
+          <div id="kw-suggestions-wrap" class="kw-suggestions-wrap hidden">
+            <p class="kw-suggestions-label">Temas relacionados que podrías agregar:</p>
+            <div id="kw-suggestion-chips" class="keywords-chips kw-suggestion-chips"></div>
+            <button id="btn-add-all-kw" class="btn-secondary" type="button" style="font-size:.8125rem;padding:.4rem 1rem">Agregar todos</button>
+          </div>
+
+          <p id="kw-error" class="error-msg hidden" role="alert"></p>
+        </section>
+
+        <div class="params-divider"></div>
+
         <!-- ── Pesos ── -->
         <section class="params-section">
           <div class="params-section-header">

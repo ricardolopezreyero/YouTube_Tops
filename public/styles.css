@@ -436,6 +436,63 @@ textarea:focus {
   height: 1px; background: var(--border); margin: .25rem 0 1.25rem;
 }
 
+/* ── Keywords chips ────────────────────────────────────────────────────────── */
+.keywords-chips {
+  display: flex; flex-wrap: wrap; gap: .375rem;
+  min-height: 32px; margin-bottom: .5rem;
+}
+.kw-chip {
+  display: inline-flex; align-items: center; gap: .3rem;
+  background: rgba(96,165,250,.12); color: #60a5fa;
+  border: 1px solid rgba(96,165,250,.3); border-radius: 20px;
+  padding: .25rem .625rem; font-size: .8125rem; font-weight: 500;
+  white-space: nowrap;
+}
+.kw-chip-remove {
+  background: none; border: none; color: inherit; cursor: pointer;
+  font-size: .9rem; line-height: 1; padding: 0; opacity: .7;
+  transition: opacity var(--t);
+}
+.kw-chip-remove:hover { opacity: 1; }
+
+.kw-chip--suggestion {
+  background: rgba(245,158,11,.08); color: var(--score-mid);
+  border-color: rgba(245,158,11,.3); cursor: pointer;
+  transition: background var(--t), color var(--t);
+}
+.kw-chip--suggestion:hover { background: rgba(245,158,11,.18); }
+.kw-chip--added { background: rgba(34,197,94,.1); color: var(--score-hi); border-color: rgba(34,197,94,.3); cursor: default; }
+
+.kw-input-row { display: flex; gap: .375rem; }
+.kw-input {
+  flex: 1; padding: .5rem .75rem;
+  background: var(--bg-card); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: .875rem; font-family: inherit;
+  transition: border-color var(--t);
+}
+.kw-input:focus { outline: none; border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(96,165,250,.2); }
+.btn-kw-add {
+  padding: .5rem .875rem; font-size: 1.125rem; font-weight: 700; flex-shrink: 0;
+}
+
+.btn-suggest-kw {
+  display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+  width: 100%; padding: .5rem 1rem; margin-top: .25rem;
+  background: rgba(245,158,11,.08); color: var(--score-mid);
+  border: 1px solid rgba(245,158,11,.25); border-radius: var(--radius-sm);
+  font-size: .875rem; font-weight: 600; cursor: pointer;
+  transition: background var(--t), border-color var(--t);
+}
+.btn-suggest-kw:hover { background: rgba(245,158,11,.16); border-color: rgba(245,158,11,.45); }
+.btn-suggest-kw:disabled { opacity: .5; cursor: not-allowed; }
+
+.kw-suggestions-wrap {
+  background: var(--bg-card2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: .75rem; display: flex; flex-direction: column; gap: .5rem;
+}
+.kw-suggestions-label { font-size: .8125rem; color: var(--text-muted); font-weight: 600; margin: 0; }
+
 /* ── Mode cards ────────────────────────────────────────────────────────────── */
 .mode-cards {
   display: flex; flex-direction: column; gap: .5rem;

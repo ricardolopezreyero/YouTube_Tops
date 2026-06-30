@@ -192,6 +192,123 @@ function applyFeedback(videos) {
     .sort((a,b)=>b.score-a.score);
 }
 
+// ── Mis intereses: keywords editables ────────────────────────────────────────
+
+function renderKeywordChips() {
+  const container = $('keywords-chips');
+  if (!container) return;
+  container.innerHTML = '';
+  state.keywords.forEach(kw => {
+    const chip = document.createElement('span');
+    chip.className = 'kw-chip';
+    chip.innerHTML = `${esc(kw)}<button class="kw-chip-remove" title="Quitar">×</button>`;
+    chip.querySelector('.kw-chip-remove').addEventListener('click', () => {
+      state.keywords = state.keywords.filter(k => k !== kw);
+      saveKeywords();
+      renderKeywordChips();
+    });
+    container.appendChild(chip);
+  });
+  const badge = $('kw-count-badge');
+  if (badge) badge.textContent = `${state.keywords.length} tema${state.keywords.length !== 1 ? 's' : ''}`;
+}
+
+function addKeyword(raw) {
+  const kw = raw.trim().toLowerCase();
+  if (!kw || state.keywords.map(k=>k.toLowerCase()).includes(kw)) return false;
+  state.keywords.push(kw);
+  saveKeywords();
+  renderKeywordChips();
+  return true;
+}
+
+function saveKeywords() {
+  if (!state.user) return;
+  updateDoc(doc(db, 'users', state.user.uid), {
+    interest_keywords: state.keywords, updated_at: serverTimestamp()
+  }).catch(e => console.warn('saveKeywords:', e.message));
+}
+
+// Sync chips whenever panel opens
+btnParams.addEventListener && null; // forward reference — wired below after btnParams is defined
+
+// Add keyword on Enter / button click
+document.addEventListener('DOMContentLoaded', () => {}); // no-op, wired below
+
+function wireKeywordsUI() {
+  const input = $('kw-input');
+  const addBtn = $('btn-add-kw');
+  if (!input || !addBtn) return;
+
+  const doAdd = () => {
+    if (!input.value.trim()) return;
+    if (addKeyword(input.value)) input.value = '';
+  };
+  addBtn.addEventListener('click', doAdd);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
+
+  // Suggest
+  $('btn-suggest-kw').addEventListener('click', async () => {
+    const btn = $('btn-suggest-kw');
+    const label = btn.querySelector('.btn-label');
+    const spinner = btn.querySelector('.btn-spinner');
+    const errEl = $('kw-error');
+    const wrap = $('kw-suggestions-wrap');
+    errEl.classList.add('hidden'); wrap.classList.add('hidden');
+
+    if (!state.keywords.length) {
+      errEl.textContent = 'Agrega al menos un tema primero.';
+      errEl.classList.remove('hidden'); return;
+    }
+    btn.disabled = true; label.textContent = 'Analizando…'; spinner.classList.remove('hidden');
+    try {
+      const token = await getToken();
+      const res = await fetch('/api/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ keywords: state.keywords }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || `Error ${res.status}`); }
+      const { suggestions } = await res.json();
+
+      if (!suggestions.length) {
+        errEl.textContent = 'No se encontraron sugerencias nuevas.';
+        errEl.classList.remove('hidden'); return;
+      }
+
+      // Render suggestion chips
+      const suggChips = $('kw-suggestion-chips');
+      suggChips.innerHTML = '';
+      suggestions.forEach(kw => {
+        const chip = document.createElement('button');
+        chip.className = 'kw-chip kw-chip--suggestion';
+        chip.type = 'button';
+        chip.textContent = kw;
+        chip.addEventListener('click', () => {
+          addKeyword(kw);
+          chip.classList.add('kw-chip--added');
+          chip.textContent = `✓ ${kw}`;
+          chip.disabled = true;
+        });
+        suggChips.appendChild(chip);
+      });
+
+      $('btn-add-all-kw').onclick = () => {
+        suggestions.forEach(kw => addKeyword(kw));
+        wrap.classList.add('hidden');
+        showToast(`✓ ${suggestions.length} temas agregados`);
+      };
+
+      wrap.classList.remove('hidden');
+    } catch(err) {
+      errEl.textContent = err.message; errEl.classList.remove('hidden');
+    } finally {
+      btn.disabled = false; label.textContent = '💡 Sugerir temas que te faltan'; spinner.classList.add('hidden');
+    }
+  });
+}
+wireKeywordsUI();
+
 // ── Parámetros ────────────────────────────────────────────────────────────────
 const paramsPanel=$('params-panel'), btnParams=$('btn-params'), weightsSum=$('weights-sum');
 btnParams.addEventListener('click',()=>{ const h=paramsPanel.classList.contains('hidden'); paramsPanel.classList.toggle('hidden',!h); btnParams.setAttribute('aria-expanded',String(h)); closeListsPanel(); });
@@ -247,11 +364,13 @@ $('btn-apply-params').addEventListener('click',async()=>{
 });
 
 // ── Perfil inline en el panel de parámetros ───────────────────────────────────
-// Sincronizar textarea con el perfil actual al abrir el panel
+// Sincronizar textarea y keywords al abrir el panel
 btnParams.addEventListener('click', () => {
   const desc = state.userProfile?.description || '';
   const inline = $('profile-desc-inline');
   if (inline && desc && inline.value !== desc) inline.value = desc;
+  renderKeywordChips();
+  $('kw-suggestions-wrap')?.classList.add('hidden');
 }, { capture: true });
 
 $('btn-update-profile').addEventListener('click', async () => {
@@ -761,7 +880,7 @@ function applyProfileToState(profile){
   // Sincronizar textarea inline del panel de parámetros
   const inline=$('profile-desc-inline');
   if(inline && profile.description) inline.value=profile.description;
-  if(profile.interest_keywords?.length) state.keywords=profile.interest_keywords;
+  if(profile.interest_keywords?.length) { state.keywords=profile.interest_keywords; renderKeywordChips(); }
   if(profile.feedback) state.feedback=profile.feedback;
   if(profile.lists) state.lists=profile.lists;
   if(profile.listItems) state.listItems=profile.listItems;
