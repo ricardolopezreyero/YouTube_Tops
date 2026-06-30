@@ -40,6 +40,28 @@ function showToast(msg, ms = 2500) {
   t.classList.remove('hidden');
   setTimeout(() => t.classList.add('hidden'), ms);
 }
+async function copyUrl(url) {
+  try {
+    await navigator.clipboard.writeText(url);
+  } catch {
+    // fallback para Safari/contextos sin permiso de clipboard
+    const ta = Object.assign(document.createElement('textarea'), {
+      value: url, style: 'position:fixed;opacity:0',
+    });
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+  showToast('🔗 URL copiada');
+}
+function buildCopyBtn(url) {
+  const btn = document.createElement('button');
+  btn.className = 'btn-copy'; btn.title = 'Copiar URL'; btn.type = 'button';
+  btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+  btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); copyUrl(url); });
+  return btn;
+}
 
 // ── Estado global ─────────────────────────────────────────────────────────────
 const state = {
@@ -868,6 +890,9 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
           </button>
         `}
+        <button class="btn-list-action btn-copy-url" title="Copiar URL">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
         <button class="btn-list-action btn-remove-from-list" title="Eliminar de la lista">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
@@ -885,6 +910,7 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
   } else {
     card.querySelector('.btn-unarchive').addEventListener('click', () => unarchiveItem(state.currentListId, videoId));
   }
+  card.querySelector('.btn-copy-url').addEventListener('click', () => copyUrl(data.url));
   card.querySelector('.btn-remove-from-list').addEventListener('click', () => removeFromList(state.currentListId, videoId));
 
   // ── Botón sinopsis ────────────────────────────────────────────────────────
@@ -1278,8 +1304,9 @@ function buildFeaturedCard(v) {
     </div>`;
   a.appendChild(buildDismissBtn(v.video_id));
   a.appendChild(buildBookmarkBtn(v));
+  a.appendChild(buildCopyBtn(v.url));
   a.addEventListener('click', e => {
-    if (e.target.closest('.btn-dismiss,.btn-bookmark')) return;
+    if (e.target.closest('.btn-dismiss,.btn-bookmark,.btn-copy')) return;
     if (e.target.closest('.score-badge--clickable')) { e.preventDefault(); return; }
     trackClick(v.video_id);
   });
@@ -1305,8 +1332,9 @@ function buildVideoCard(v) {
     </div>`;
   a.appendChild(buildDismissBtn(v.video_id));
   a.appendChild(buildBookmarkBtn(v));
+  a.appendChild(buildCopyBtn(v.url));
   a.addEventListener('click', e => {
-    if (e.target.closest('.btn-dismiss,.btn-bookmark')) return;
+    if (e.target.closest('.btn-dismiss,.btn-bookmark,.btn-copy')) return;
     if (e.target.closest('.score-badge--clickable')) { e.preventDefault(); return; }
     trackClick(v.video_id);
   });
