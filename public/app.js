@@ -571,29 +571,50 @@ function renderListView() {
   sorted.forEach(([videoId, data], idx) => container.appendChild(buildListItemRow(videoId, data, idx, sorted.length)));
 }
 function buildListItemRow(videoId, data, idx, total) {
-  const row = document.createElement('div');
-  row.className = 'list-item-row'; row.id = `listrow-${CSS.escape(videoId)}`;
-  row.innerHTML = `
-    <div class="list-item-thumb-wrap">
-      ${data.thumbnail_url ? `<img src="${esc(data.thumbnail_url)}" alt="" class="list-item-thumb" loading="lazy">` : `<div class="list-item-thumb-placeholder">▶</div>`}
-      <span class="video-duration">${fmtDuration(data.duration_s)}</span>
-    </div>
-    <div class="list-item-info">
-      <a href="${esc(data.url)}" target="_blank" rel="noopener noreferrer" class="list-item-title">${esc(data.title)}</a>
-      <div class="list-item-meta">
-        <span>${esc(data.channel_title)}</span>
-        ${data.score ? `<span class="${scoreBadgeClass(data.score)} score-badge" style="font-size:.68rem">Score ${(data.score * 100).toFixed(0)}</span>` : ''}
+  const card = document.createElement('div');
+  card.className = 'list-card'; card.id = `listrow-${CSS.escape(videoId)}`;
+
+  const hasReason = data.reason && data.reason.length > 5;
+
+  card.innerHTML = `
+    <a href="${esc(data.url)}" target="_blank" rel="noopener noreferrer" class="list-card-thumb-link">
+      ${data.thumbnail_url
+        ? `<img src="${esc(data.thumbnail_url)}" alt="${esc(data.title)}" class="list-card-thumb" loading="lazy">`
+        : `<div class="list-card-thumb-placeholder">▶</div>`}
+      <span class="list-card-duration">${fmtDuration(data.duration_s)}</span>
+      <span class="list-card-play-overlay">▶</span>
+    </a>
+
+    <div class="list-card-body">
+      <div class="list-card-num">${idx + 1}</div>
+
+      <div class="list-card-content">
+        <a href="${esc(data.url)}" target="_blank" rel="noopener noreferrer" class="list-card-title">
+          ${esc(data.title)}
+        </a>
+        <div class="list-card-meta">
+          <span class="list-card-channel">${esc(data.channel_title)}</span>
+          ${data.score ? `<span class="${scoreBadgeClass(data.score)} score-badge" style="font-size:.68rem">Score ${(data.score * 100).toFixed(0)}</span>` : ''}
+        </div>
+
+        <p id="reason-${CSS.escape(videoId)}" class="list-card-reason${hasReason ? '' : ' hidden'}">
+          ${hasReason ? esc(data.reason) : ''}
+        </p>
       </div>
-    </div>
-    <div class="list-item-actions">
-      <button class="btn-move" data-dir="up"   data-id="${videoId}" ${idx === 0           ? 'disabled' : ''}>↑</button>
-      <button class="btn-move" data-dir="down" data-id="${videoId}" ${idx === total - 1   ? 'disabled' : ''}>↓</button>
-      <button class="btn-remove-from-list" data-id="${videoId}">✕</button>
+
+      <div class="list-card-actions">
+        <button class="btn-move" data-dir="up"   title="Subir"  ${idx === 0         ? 'disabled' : ''}>↑</button>
+        <button class="btn-move" data-dir="down" title="Bajar"  ${idx === total - 1 ? 'disabled' : ''}>↓</button>
+        <button class="btn-remove-from-list" title="Quitar de la lista">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
     </div>`;
-  row.querySelectorAll('.btn-move').forEach(btn =>
+
+  card.querySelectorAll('.btn-move').forEach(btn =>
     btn.addEventListener('click', () => moveItemInList(state.currentListId, videoId, btn.dataset.dir)));
-  row.querySelector('.btn-remove-from-list').addEventListener('click', () => removeFromList(state.currentListId, videoId));
-  return row;
+  card.querySelector('.btn-remove-from-list').addEventListener('click', () => removeFromList(state.currentListId, videoId));
+  return card;
 }
 function moveItemInList(listId, videoId, dir) {
   const items  = state.listItems[listId]; if (!items) return;
@@ -606,24 +627,76 @@ function moveItemInList(listId, videoId, dir) {
 }
 function removeFromList(listId, videoId) {
   delete state.listItems[listId][videoId]; persistLists();
-  const row = $(`listrow-${CSS.escape(videoId)}`);
-  if (row) { row.style.opacity = '0'; setTimeout(() => row.remove(), 220); }
-  $('list-empty-state').classList.toggle('hidden', Object.keys(state.listItems[listId] || {}).length > 0);
+  const card = $(`listrow-${CSS.escape(videoId)}`);
+  if (card) {
+    card.style.transition = 'opacity .2s, transform .2s';
+    card.style.opacity = '0'; card.style.transform = 'scale(0.97)';
+    setTimeout(() => card.remove(), 220);
+  }
+  const remaining = Object.keys(state.listItems[listId] || {}).length;
+  $('list-empty-state').classList.toggle('hidden', remaining > 0);
   showToast('Video quitado de la lista');
 }
-function addVideoToList(listId, videoData) {
+async function addVideoToList(listId, videoData) {
   const items = state.listItems[listId] || {};
   if (items[videoData.video_id]) { showToast('Ya está en esta lista'); return; }
+
   items[videoData.video_id] = {
-    order: Object.keys(items).length, added_at: new Date().toISOString(),
-    title: videoData.title, channel_title: videoData.channel_title,
-    thumbnail_url: videoData.thumbnail_url, url: videoData.url,
-    duration_s: videoData.duration_s || videoData.duration_seconds,
-    score: videoData.score || 0,
+    order:         Object.keys(items).length,
+    added_at:      new Date().toISOString(),
+    title:         videoData.title,
+    channel_title: videoData.channel_title,
+    thumbnail_url: videoData.thumbnail_url,
+    url:           videoData.url,
+    duration_s:    videoData.duration_s || videoData.duration_seconds,
+    score:         videoData.score || 0,
+    breakdown:     videoData.breakdown || null,
+    reason:        '',
   };
-  state.listItems[listId] = items; persistLists();
-  showToast(`✓ Guardado en "${state.lists.find(l => l.id === listId)?.name || 'lista'}"`);
+  state.listItems[listId] = items;
+  persistLists();
+
+  const listName = state.lists.find(l => l.id === listId)?.name || 'lista';
+  showToast(`✓ Guardado en "${listName}"`);
+  markCardAsSaved(videoData.video_id);
   if (state.currentView === 'list' && state.currentListId === listId) renderListView();
+
+  // Genera razón en background y actualiza sin bloquear
+  try {
+    const { reason } = await apiFetch('/api/recommend-reason', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title:         videoData.title,
+        channel_title: videoData.channel_title,
+        duration_s:    videoData.duration_s || videoData.duration_seconds || 0,
+        breakdown:     videoData.breakdown || {},
+        keywords:      state.keywords,
+      }),
+    });
+    if (reason && state.listItems[listId]?.[videoData.video_id]) {
+      state.listItems[listId][videoData.video_id].reason = reason;
+      persistLists();
+      const reasonEl = $(`reason-${CSS.escape(videoData.video_id)}`);
+      if (reasonEl) {
+        reasonEl.textContent = reason;
+        reasonEl.classList.remove('hidden');
+      }
+    }
+  } catch { /* razón es opcional, no falla la acción */ }
+}
+
+function markCardAsSaved(videoId) {
+  const card = $(`card-${CSS.escape(videoId)}`);
+  if (!card) return;
+  // Pulso en el borde de la tarjeta
+  card.classList.add('card--just-saved');
+  setTimeout(() => card.classList.remove('card--just-saved'), 900);
+  // Ícono del bookmark cambia a ✓ guardado
+  const btn = card.querySelector('.btn-bookmark');
+  if (!btn) return;
+  btn.classList.add('btn-bookmark--saved');
+  btn.title = 'Guardado en lista';
+  btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
 }
 
 // ── Dropdown "Agregar a lista" ────────────────────────────────────────────────
