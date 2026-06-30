@@ -5,7 +5,7 @@
 
 import {
   auth, db, googleProvider,
-  signInWithRedirect, getRedirectResult,
+  signInWithPopup, signInWithRedirect, getRedirectResult,
   onAuthStateChanged, signOut,
   doc, getDoc, setDoc, updateDoc, serverTimestamp,
 } from './firebase-config.js';
@@ -63,14 +63,28 @@ function showScreen(id) {
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
-// Login: SOLO signInWithRedirect (sin popup, sin fallbacks, sin complejidad).
-// El botón redirige a Google → Google devuelve al usuario → onAuthStateChanged maneja todo.
-
-$('btn-google-login').addEventListener('click', () => {
-  const btn = $('btn-google-login');
+$('btn-google-login').addEventListener('click', async () => {
+  const btn   = $('btn-google-login');
+  const errEl = $('login-error');
+  errEl.classList.add('hidden');
   btn.disabled = true;
-  btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin .7s linear infinite"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Conectando con Google…`;
-  signInWithRedirect(auth, googleProvider);
+
+  try {
+    // Popup muestra el selector de cuenta de Google
+    await signInWithPopup(auth, googleProvider);
+    // onAuthStateChanged se encarga del resto
+  } catch (err) {
+    // Si el popup fue bloqueado o cerrado, usar redirect como fallback
+    if (['auth/popup-blocked','auth/popup-closed-by-user','auth/cancelled-popup-request'].includes(err.code)) {
+      await signInWithRedirect(auth, googleProvider);
+      // La página se redirige — el código de abajo no se ejecuta
+      return;
+    }
+    // Cualquier otro error: mostrar mensaje y rehabilitar botón
+    errEl.textContent = err.message || 'Error al iniciar sesión';
+    errEl.classList.remove('hidden');
+    btn.disabled = false;
+  }
 });
 
 // Logout
