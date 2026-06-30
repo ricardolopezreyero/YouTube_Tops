@@ -1049,12 +1049,43 @@ $('modal-synopsis').addEventListener('click', e => {
 $('synopsis-modal-copy').addEventListener('click', () => {
   if (_synopsisModalContext) copyUrl(_synopsisModalContext.data.url);
 });
+$('synopsis-copy-full').addEventListener('click', copySynopsis);
 
 function synopsisToHtml(text) {
-  return (text || '').split(/\n\n+/)
+  return (text || '')
+    .replace(/P[aá]rrafo\s*\d+:\s*/gi, '') // eliminar labels si el modelo los añade
+    .split(/\n\n+/)
     .filter(p => p.trim())
-    .map(p => `<p>${esc(p.trim())}</p>`)
+    .map(p => {
+      // Convertir **texto** → <strong>texto</strong>
+      const html = esc(p.trim()).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      return `<p>${html}</p>`;
+    })
     .join('');
+}
+
+function synopsisToPlainText(text) {
+  return (text || '')
+    .replace(/P[aá]rrafo\s*\d+:\s*/gi, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1') // quitar marcadores de negrita
+    .trim();
+}
+
+async function copySynopsis() {
+  if (!_synopsisModalContext?.data) return;
+  const { data } = _synopsisModalContext;
+  const synopsis = synopsisToPlainText(data.synopsis || '');
+  const text     = `${data.title}\n${data.url}\n\n${synopsis}`;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = Object.assign(document.createElement('textarea'), {
+      value: text, style: 'position:fixed;opacity:0',
+    });
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+  }
+  showToast('✓ Sinopsis copiada');
 }
 
 // ── Archivar / Restaurar ──────────────────────────────────────────────────────

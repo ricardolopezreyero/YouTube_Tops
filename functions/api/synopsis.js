@@ -54,11 +54,14 @@ export async function onRequestPost(context) {
 ${sourceText}
 ---
 
-Escribe un resumen en ESPAÑOL con exactamente 3 párrafos. Sin encabezados ni numeración.
-• Párrafo 1: De qué trata el video y cuál es la premisa central.
-• Párrafo 2: Los puntos, frameworks o tácticas más concretos que se explican.
-• Párrafo 3: Por qué vale la pena verlo completo y qué se lleva el espectador.
-Máximo 100 palabras por párrafo. Sé directo y útil. Responde SOLO los 3 párrafos.`;
+Escribe un resumen en ESPAÑOL con exactamente 3 párrafos separados por línea en blanco.
+REGLAS ESTRICTAS:
+- Sin "Párrafo 1:", sin numeración, sin encabezados de ningún tipo.
+- Cada párrafo empieza con su IDEA CLAVE en negrita así: **idea clave** seguida del desarrollo.
+- Párrafo 1: premisa central del video.
+- Párrafo 2: puntos, frameworks o tácticas concretas que se explican.
+- Párrafo 3: por qué vale la pena verlo completo.
+Máximo 90 palabras por párrafo. Responde SOLO los 3 párrafos, nada más.`;
 
     for (const model of [
       '@cf/meta/llama-3.1-8b-instruct',
