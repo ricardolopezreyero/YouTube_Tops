@@ -247,27 +247,30 @@ textarea:focus {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: .75rem 1rem;
-  background: rgba(13,13,13,.9);
+  gap: .5rem;
+  padding: .625rem .875rem;
+  background: rgba(13,13,13,.95);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
+  min-height: 52px;
 }
 
 .header-brand {
   display: flex;
   align-items: center;
-  gap: .5rem;
-  font-size: 1.25rem;
+  gap: .375rem;
+  font-size: 1.125rem;
+  flex-shrink: 0;
 }
 .brand-name { font-weight: 700; letter-spacing: -.02em; }
 
-.header-actions { display: flex; gap: .5rem; }
+.header-actions { display: flex; gap: .375rem; align-items: center; flex-shrink: 0; }
 
 .btn-icon {
   display: inline-flex;
   align-items: center;
-  gap: .375rem;
-  padding: .5rem .75rem;
+  gap: .3rem;
+  padding: .4rem .625rem;
   background: var(--bg-card);
   color: var(--text-secondary);
   border: 1px solid var(--border);
@@ -276,9 +279,20 @@ textarea:focus {
   font-weight: 500;
   cursor: pointer;
   transition: color var(--t), background var(--t);
+  white-space: nowrap;
 }
 .btn-icon:hover { color: var(--text-primary); background: var(--bg-card2); }
-.btn-icon--user { padding: .5rem; }
+.btn-icon--user { padding: .4rem .5rem; }
+
+/* Mobile: ocultar texto de botones del header, mostrar sólo iconos */
+@media (max-width: 480px) {
+  .app-header { padding: .5rem .75rem; }
+  .brand-name { display: none; }
+  .header-brand { font-size: 1.25rem; }
+  .btn-icon .btn-label-text { display: none; }
+  .btn-icon { padding: .4rem .5rem; }
+  .lists-count-badge { margin-left: .15rem; }
+}
 
 /* ── Params Panel ──────────────────────────────────────────────────────────── */
 .params-panel {
