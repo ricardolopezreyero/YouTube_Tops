@@ -9,7 +9,7 @@
 
 import {
   auth, db, googleProvider,
-  signInWithPopup, signInWithRedirect, getRedirectResult,
+  signInWithPopup,
   onAuthStateChanged, signOut,
   doc, getDoc, setDoc, updateDoc, serverTimestamp,
 } from './firebase-config.js';
@@ -82,8 +82,8 @@ $('btn-google-login').addEventListener('click', async () => {
   try {
     await signInWithPopup(auth, googleProvider);
   } catch (err) {
-    if (['auth/popup-blocked', 'auth/popup-closed-by-user', 'auth/cancelled-popup-request'].includes(err.code)) {
-      await signInWithRedirect(auth, googleProvider);
+    if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+      btn.disabled = false;
       return;
     }
     errEl.textContent = err.message || 'Error al iniciar sesión';
@@ -1165,14 +1165,6 @@ window.addEventListener('scroll', () => scorePopover.classList.add('hidden'), { 
 // ── Inicialización final ──────────────────────────────────────────────────────
 updateWeightsSum();
 wireKeywordsUI();
-
-getRedirectResult(auth).catch(err => {
-  if (err.code !== 'auth/no-auth-event') {
-    logger.error('getRedirectResult falló', { code: err.code, msg: err.message });
-    const errEl = $('login-error');
-    if (errEl) { errEl.textContent = `Error al autenticar: ${err.message}`; errEl.classList.remove('hidden'); }
-  }
-});
 
 // onAuthStateChanged al FINAL del módulo: todos los const ya están inicializados.
 onAuthStateChanged(auth, async user => {
