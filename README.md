@@ -1,180 +1,128 @@
-# YouTube Tops
+# 🎯 YouTube Tops
 
-Recomendador personal de videos de YouTube sin algoritmo de retención. Descubre contenido largo y profundo basado en tu perfil de intereses, no en lo que maximiza el tiempo de pantalla.
+### **[→ Abrir la app: youtube-tops.pages.dev](https://youtube-tops.pages.dev)**
+
+> *Los mejores videos de YouTube según tu perfil. Sin el algoritmo de retención.*
 
 ---
 
-## Qué hace
+## El problema con YouTube normal
 
-- **Corpus compartido en Cloudflare D1** — videos indexados por un score base de 6 factores
-- **Re-ranking personal** — cada usuario ajusta pesos y palabras clave desde su perfil en Firestore
-- **Filter bar** — filtra por duración: corto (<15 min), medio (15–30), largo (30–60), profundo (>60)
-- **Mi Sesión** — genera una playlist que llena exactamente el tiempo que tienes disponible (knapsack greedy)
-- **Score breakdown** — hover sobre cualquier badge de score para ver el detalle por componente
-- **Listas** — guarda, reordena y gestiona listas de videos; importa por URL
-- **Feedback loop** — clics suben el score (+0.03 por clic, máx +0.30); "No me interesa" oculta permanentemente
+YouTube está diseñado para **maximizar el tiempo que pasas en la app**, no lo que aprendes. Su algoritmo premia:
 
-### Algoritmo de score (6 componentes)
+- Videos cortos que generan ansiedad y te hacen seguir scrolleando
+- Clickbait que sube el CTR aunque el contenido no valga nada
+- Tendencias virales que no tienen nada que ver con lo que tú necesitas
+- El mismo feed para todos — no importa si eres developer, consultor o emprendedor
 
-| Componente   | Peso default | Qué mide |
+El resultado: acabas viendo cosas que no pediste, sin recordar por qué empezaste.
+
+---
+
+## Qué hace YouTube Tops diferente
+
+**Un algoritmo propio, transparente y personalizado para ti.**
+
+En lugar de optimizar tu tiempo de pantalla, YouTube Tops rankea cada video con 6 factores que miden calidad real:
+
+| Factor | Qué mide | Por qué importa |
 |---|---|---|
-| Engagement   | 35 | Ratio likes/vistas + comentarios/vistas, penaliza viralidad sin fondo |
-| Relevancia   | 25 | Overlap de keywords del perfil con título y descripción |
-| Profundidad  | 15 | Keywords de contenido denso + presencia de capítulos |
-| Duración     | 10 | Sweet spot 8–60 min; penaliza clips cortos y maratones |
-| Subtítulos   | 5  | Tiene CC (binario) |
-| Autoridad    | 10 | log₁₀(suscriptores)/7, capped en 10M |
+| **Engagement real** | Ratio likes/vistas + comentarios, penalizando viralidad vacía | Un video con 50K vistas y 5% de likes supera a uno viral con 0.5% |
+| **Relevancia personal** | Qué tanto coincide el video con tus temas de interés | Solo ves contenido alineado con lo que tú declaras, no lo que el algoritmo supone |
+| **Profundidad** | Presencia de capítulos, terminología técnica, estructura | Favorece masterclasses y tutoriales densos sobre videos superficiales |
+| **Duración** | Sweet spot de 8–60 min | Filtra clips de 90 segundos y maratones de 4 horas sin estructura |
+| **Subtítulos** | Tiene CC disponible | Señal de producción profesional y accesibilidad |
+| **Autoridad del canal** | Tamaño del canal (log₁₀, cap en 10M subs) | Da crédito a canales establecidos sin ignorar canales pequeños de calidad |
+
+**Tú controlas los pesos.** Si hoy quieres profundidad, sube ese slider. Si tienes 15 minutos libres, activa el modo Quick wins. El algoritmo no cambia solo — cambia cuando tú decides.
 
 ---
 
-## Stack
+## Funcionalidades principales
 
-| Capa | Tecnología |
-|---|---|
-| Hosting + backend | Cloudflare Pages + Pages Functions |
-| Base de datos | Cloudflare D1 (SQLite en el edge) |
-| Cache / dedup | Cloudflare KV |
-| AI (onboard) | Workers AI — `@cf/meta/llama-3.1-8b-instruct` |
-| Auth | Firebase Authentication (Google, popup) |
-| Perfil de usuario | Firestore (reglas: solo el dueño lee/escribe) |
-| Frontend | Vanilla JS ES modules, sin bundler |
-| CI/CD | GitHub Actions → `wrangler pages deploy` |
-| Videos | YouTube Data API v3 |
+**🏆 Feed personalizado**
+Cada video tiene un score visible. Al hacer hover ves exactamente por qué rankeó donde rankeó — sin cajas negras.
 
----
+**⏱ Mi Sesión**
+"Tengo 30 minutos." La app arma automáticamente una playlist que cabe exactamente en tu ventana de tiempo, eligiendo los mejores videos del corpus en ese rango.
 
-## Estructura del proyecto
+**📋 Listas inteligentes**
+Guarda videos para después, agrupa por tema, reordena. La IA crea 3 listas personalizadas desde el día uno según tu perfil.
 
-```
-YouTube_Tops/
-├── public/                  # Frontend estático
-│   ├── index.html
-│   ├── app.js               # Toda la lógica del cliente
-│   ├── styles.css
-│   ├── firebase-config.js
-│   └── logger.js
-├── functions/api/           # Cloudflare Pages Functions (edge)
-│   ├── videos.js            # GET /api/videos
-│   ├── add-video.js         # POST /api/add-video
-│   ├── onboard.js           # POST /api/onboard
-│   └── suggest.js           # POST /api/suggest
-├── src/lib/                 # Librerías compartidas backend
-│   ├── auth.js              # Verificación JWT Firebase (RS256, Web Crypto)
-│   ├── scoring.js           # scoreVideo() + scoreBase()
-│   ├── youtube.js           # YouTube Data API v3 helpers
-│   ├── ai.js                # Workers AI (perfil + sugerencias)
-│   └── quota.js             # Control de cuota diaria YouTube
-├── migrations/
-│   └── 0001_init.sql        # Schema D1
-├── scripts/
-│   └── seed.js              # Carga inicial del corpus desde YouTube
-├── config.js                # Seeds, pesos default, constantes
-└── wrangler.toml            # Bindings D1, KV, AI, vars
-```
+**🔍 Feedback que aprende**
+Cada video que abres sube en tu ranking personal. Lo que descartas con ✕ desaparece para siempre. Con el tiempo, tu feed se afina solo.
+
+**🎯 Filtros de duración**
+Un clic filtra el feed por duración: <15 min / 15–30 / 30–60 / >60 min. Decide según tu energía del momento.
+
+**➕ Agregar por URL**
+¿Encontraste un video en otro lado? Pégalo y queda en tu sistema, rankeado con el mismo algoritmo.
 
 ---
 
-## Setup inicial (una sola vez)
+## Cómo funciona (sin tecnicismos)
 
-### 1. Prerrequisitos
+1. **Describes quién eres** en una caja de texto — a qué te dedicas, qué quieres aprender, qué odias ver
+2. **La IA procesa eso** y genera tus keywords de interés y 3 listas personalizadas
+3. **El sistema busca** los mejores videos del corpus que coincidan con tu perfil
+4. **Ves tu feed personalizado** — rankeado por calidad real, no por retención
+5. **Con cada interacción** el feed se afina: clics suben el score, descartes lo limpian
 
+---
+
+## Setup rápido (para correrlo tú mismo)
+
+### Prerrequisitos
 - Node.js ≥ 18
-- Cuenta Cloudflare con Workers y Pages habilitados
-- Proyecto Firebase (`tops-b68a3` o el tuyo)
-- YouTube Data API v3 key
+- Cuenta Cloudflare (gratis)
+- Proyecto Firebase (gratis)
+- YouTube Data API v3 key (gratis, 10K unidades/día)
 
-### 2. Variables de entorno
+### Variables necesarias
 
-Crea `.dev.vars` en la raíz (no se sube al repo):
-
+Archivo `.dev.vars` en la raíz:
 ```
-YOUTUBE_API_KEY=tu_clave_de_youtube
-```
-
-Crea `.env` para referencias locales:
-
-```
-CF_ACCOUNT_ID=tu_account_id
-CF_D1_DATABASE_ID=c53c86e9-7482-4cdc-8679-f50a015efb09
+YOUTUBE_API_KEY=tu_clave_aqui
 ```
 
-Agrega los secrets en GitHub (Settings → Secrets → Actions):
+Secret en Cloudflare (una vez):
+```bash
+npx wrangler secret put YOUTUBE_API_KEY
+```
 
-- `CLOUDFLARE_API_TOKEN` — token con permisos de Pages y D1
+Secret en GitHub → Settings → Secrets:
+```
+CLOUDFLARE_API_TOKEN = tu_token_cloudflare
+```
 
-### 3. Base de datos D1
+### Inicializar la base de datos
 
 ```bash
-# Aplicar schema
+# Crear schema
 npx wrangler d1 migrations apply youtube_tops --remote
 
-# Cargar corpus inicial (~1000 unidades de cuota YouTube)
+# Poblar con videos iniciales (~1000 unidades de cuota YouTube)
 npm run seed
 ```
 
-### 4. Firestore
+### Deploy
 
 ```bash
-# Desplegar reglas de seguridad
-npm run firebase:rules
-```
-
-### 5. Deploy manual (primera vez)
-
-```bash
+# Manual (primera vez)
 npm run deploy
+
+# Automático: cada push a main dispara GitHub Actions
+git push origin main
 ```
 
-Después de eso, cada push a `main` despliega automáticamente vía GitHub Actions.
+---
+
+## Stack (para los curiosos)
+
+Cloudflare Pages + D1 + KV + Workers AI · Firebase Auth + Firestore · YouTube Data API v3 · Vanilla JS sin bundler
 
 ---
 
-## Desarrollo local
+### **[→ Abrir la app: youtube-tops.pages.dev](https://youtube-tops.pages.dev)**
 
-```bash
-npm run dev
-# Abre http://localhost:8788
-```
-
-Cloudflare Pages local usa D1 y KV locales automáticamente con las configuraciones de `wrangler.toml`.
-
----
-
-## Endpoints API
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| `POST` | `/api/onboard` | Deriva semillas y keywords desde una descripción con Workers AI |
-| `GET` | `/api/videos` | Top videos del corpus re-rankeados con pesos del usuario |
-| `POST` | `/api/add-video` | Agrega un video por URL (cache D1 primero, luego YouTube API) |
-| `POST` | `/api/suggest` | Sugiere keywords adicionales con Workers AI |
-
-Todos los endpoints requieren `Authorization: Bearer <Firebase ID Token>`.
-
----
-
-## Cuota YouTube API
-
-La API de YouTube tiene un límite de **10,000 unidades/día**.
-
-| Operación | Costo |
-|---|---|
-| `search.list` (1 búsqueda) | 100 u |
-| `videos.list` (batch 50) | 1 u |
-| `channels.list` (batch 50) | 1 u |
-| Seed completo (10 seeds) | ~1,003 u |
-
-El archivo `quota.js` trackea el uso en D1. El seed script está configurado para no exceder el budget en `config.js`.
-
----
-
-## Notas técnicas
-
-**Por qué no Firebase Admin SDK en Workers:**
-Workers no puede ejecutar Node.js nativamente. La verificación de JWT de Firebase se hace con Web Crypto API (RS256) obteniendo las claves públicas de Google JWK con caché en Cloudflare.
-
-**REGLA CRÍTICA JS:**
-Todos los `const` se declaran antes de cualquier `addEventListener`. `onAuthStateChanged` va al final del módulo. Esto previene crashes por Temporal Dead Zone (TDZ) en ES modules.
-
-**Modelo de datos multiusuario:**
-D1 es un corpus compartido (todos los usuarios ven el mismo pool). Firestore guarda el perfil de cada usuario (pesos, keywords, feedback, listas). El re-ranking sucede en el edge al momento de `GET /api/videos`.
+*Hecho por RLR · 2026*
