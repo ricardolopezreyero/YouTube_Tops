@@ -783,6 +783,17 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false) {
         <p id="reason-${CSS.escape(videoId)}" class="list-card-reason${hasReason ? '' : ' hidden'}">
           ${hasReason ? esc(data.reason) : ''}
         </p>
+
+        <div class="synopsis-section">
+          <button class="btn-synopsis" type="button">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            <span class="btn-synopsis-label">${data.synopsis ? 'Ver sinopsis' : 'Sinopsis'}</span>
+            <span class="btn-synopsis-spinner hidden"></span>
+          </button>
+          <div id="synopsis-panel-${CSS.escape(videoId)}" class="synopsis-panel hidden">
+            ${data.synopsis ? synopsisToHtml(data.synopsis) : ''}
+          </div>
+        </div>
       </div>
 
       <div class="list-card-actions">
@@ -818,7 +829,73 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false) {
     card.querySelector('.btn-unarchive').addEventListener('click', () => unarchiveItem(state.currentListId, videoId));
   }
   card.querySelector('.btn-remove-from-list').addEventListener('click', () => removeFromList(state.currentListId, videoId));
+
+  // ── Botón sinopsis ────────────────────────────────────────────────────────
+  card.querySelector('.btn-synopsis').addEventListener('click', async () => {
+    const panel   = $(`synopsis-panel-${CSS.escape(videoId)}`);
+    const btn     = card.querySelector('.btn-synopsis');
+    const label   = btn.querySelector('.btn-synopsis-label');
+    const spinner = btn.querySelector('.btn-synopsis-spinner');
+
+    // Si ya hay sinopsis guardada: toggle visibilidad
+    if (data.synopsis) {
+      const visible = !panel.classList.contains('hidden');
+      panel.classList.toggle('hidden', visible);
+      label.textContent = visible ? 'Ver sinopsis' : 'Ocultar sinopsis';
+      return;
+    }
+
+    // Generar nueva
+    btn.disabled = true;
+    label.textContent = 'Generando…';
+    spinner.classList.remove('hidden');
+
+    try {
+      const { synopsis, error } = await apiFetch('/api/synopsis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId, title: data.title }),
+      });
+
+      if (error && !synopsis) {
+        panel.innerHTML = `<p class="synopsis-error">${esc(error)}</p>`;
+        panel.classList.remove('hidden');
+        label.textContent = 'Sinopsis';
+        return;
+      }
+
+      // Guardar en state y persistir
+      data.synopsis = synopsis;
+      if (state.currentListId && state.listItems[state.currentListId]?.[videoId])
+        state.listItems[state.currentListId][videoId].synopsis = synopsis;
+      persistLists();
+
+      panel.innerHTML = synopsisToHtml(synopsis);
+      panel.classList.remove('hidden');
+      panel.style.opacity = '0';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        panel.style.transition = 'opacity .35s ease';
+        panel.style.opacity    = '1';
+      }));
+      label.textContent = 'Ocultar sinopsis';
+    } catch (err) {
+      panel.innerHTML = `<p class="synopsis-error">Error: ${esc(err.message)}</p>`;
+      panel.classList.remove('hidden');
+      label.textContent = 'Reintentar';
+    } finally {
+      btn.disabled = false;
+      spinner.classList.add('hidden');
+    }
+  });
+
   return card;
+}
+
+function synopsisToHtml(text) {
+  return text.split(/\n\n+/)
+    .filter(p => p.trim())
+    .map(p => `<p>${esc(p.trim())}</p>`)
+    .join('');
 }
 
 // ── Archivar / Restaurar ──────────────────────────────────────────────────────

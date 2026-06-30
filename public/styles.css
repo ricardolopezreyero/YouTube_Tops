@@ -738,6 +738,35 @@ input[type="range"] { accent-color:var(--accent); width:100%; cursor:pointer; }
 .btn-move-list:hover     { background:var(--accent-glow)   !important; color:var(--accent)    !important; border-color:var(--accent)    !important; }
 .btn-remove-from-list    { } /* hereda .btn-list-action */
 
+/* ── Sinopsis ────────────────────────────────────────────────────────────────── */
+.synopsis-section { margin-top:.55rem; }
+
+.btn-synopsis {
+  display:inline-flex; align-items:center; gap:.35rem;
+  padding:.28rem .65rem; font-size:.76rem; font-weight:500;
+  background:var(--bg-card2); color:var(--text-muted);
+  border:1px solid var(--border); border-radius:999px; cursor:pointer;
+  transition:color var(--t), border-color var(--t), background var(--t);
+}
+.btn-synopsis:hover:not(:disabled) { color:var(--accent); border-color:var(--accent); background:var(--accent-glow); }
+.btn-synopsis:disabled { opacity:.6; cursor:not-allowed; }
+.btn-synopsis-spinner {
+  display:none; width:11px; height:11px;
+  border:1.5px solid var(--border); border-top-color:var(--accent);
+  border-radius:50%; animation:spin .6s linear infinite;
+}
+.btn-synopsis-spinner:not(.hidden) { display:block; }
+
+.synopsis-panel {
+  margin-top:.6rem; padding:.8rem 1rem;
+  background:var(--bg-card2); border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  font-size:.84rem; line-height:1.7; color:var(--text-muted);
+}
+.synopsis-panel p { margin-bottom:.65rem; }
+.synopsis-panel p:last-child { margin-bottom:0; }
+.synopsis-error { color:var(--score-lo); font-size:.8rem; }
+
 /* Tarjeta archivada */
 .list-card--archived {
   opacity:.55; filter:grayscale(.4);
