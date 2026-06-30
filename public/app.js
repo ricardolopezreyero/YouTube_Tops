@@ -108,6 +108,24 @@ async function saveProfile(data) {
 const descInput=$('description-input'), charCount=$('char-count');
 descInput.addEventListener('input', ()=>{ charCount.textContent=descInput.value.length; });
 
+// ── Onboarding multi-step ────────────────────────────────────────────────────
+function showOnboardStep(step) {
+  document.querySelectorAll('.onboard-step').forEach(s => s.classList.remove('active'));
+  $(`onboard-step-${step}`).classList.add('active');
+}
+
+$('btn-onboard-next').addEventListener('click', () => showOnboardStep(2));
+$('btn-onboard-back').addEventListener('click', () => showOnboardStep(1));
+
+// Example chips pre-fill textarea
+document.querySelectorAll('.ob-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    descInput.value = chip.dataset.text;
+    charCount.textContent = descInput.value.length;
+    descInput.focus();
+  });
+});
+
 $('btn-save-profile').addEventListener('click', async () => {
   const btn=$('btn-save-profile'), errEl=$('onboard-error');
   const label=btn.querySelector('.btn-label'), spinner=btn.querySelector('.btn-spinner');

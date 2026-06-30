@@ -31,23 +31,129 @@
 
   <!-- ══ Pantalla 2: Onboarding ════════════════════════════════════════════ -->
   <div id="screen-onboard" class="screen">
-    <div class="onboard-card">
-      <div class="onboard-header">
-        <span class="onboard-logo">🎯</span>
-        <h2>Cuéntanos sobre ti</h2>
+
+    <!-- Paso 1: Bienvenida + valor -->
+    <div id="onboard-step-1" class="onboard-step active">
+      <div class="onboard-welcome">
+
+        <div class="ob-logo-wrap">
+          <span class="ob-logo">🎯</span>
+          <div class="ob-logo-glow"></div>
+        </div>
+
+        <h1 class="ob-headline">YouTube sin el algoritmo<br>de retención</h1>
+        <p class="ob-sub">Los mejores videos para aprender, crecer y actuar.<br>Rankeados según TU perfil, no el de todos.</p>
+
+        <!-- Comparación -->
+        <div class="ob-compare">
+          <div class="ob-compare-col ob-compare-bad">
+            <div class="ob-compare-label">YouTube normal</div>
+            <ul>
+              <li>❌ Maximiza tu tiempo en la app</li>
+              <li>❌ El mismo feed para todos</li>
+              <li>❌ No sabes por qué te recomienda</li>
+              <li>❌ Clickbait y virales vacíos</li>
+            </ul>
+          </div>
+          <div class="ob-compare-col ob-compare-good">
+            <div class="ob-compare-label">YouTube Tops</div>
+            <ul>
+              <li>✅ Maximiza lo que aprendes</li>
+              <li>✅ Score personalizado para ti</li>
+              <li>✅ Algoritmo transparente</li>
+              <li>✅ Profundidad sobre viralidad</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Features -->
+        <div class="ob-features">
+          <div class="ob-feature">
+            <span class="ob-feature-icon">🏆</span>
+            <div>
+              <strong>Tu score, tu feed</strong>
+              <p>Ajusta 6 pesos: engagement, relevancia, profundidad, duración, subtítulos y autoridad del canal.</p>
+            </div>
+          </div>
+          <div class="ob-feature">
+            <span class="ob-feature-icon">📋</span>
+            <div>
+              <strong>Listas inteligentes</strong>
+              <p>Guarda videos para después, organiza por tema. La IA crea 3 listas según tu perfil desde el inicio.</p>
+            </div>
+          </div>
+          <div class="ob-feature">
+            <span class="ob-feature-icon">⏱</span>
+            <div>
+              <strong>Mi Sesión</strong>
+              <p>"Tengo 30 minutos" → la app arma la playlist perfecta que cabe exactamente en tu tiempo.</p>
+            </div>
+          </div>
+          <div class="ob-feature">
+            <span class="ob-feature-icon">✕</span>
+            <div>
+              <strong>Retroalimentación real</strong>
+              <p>Descarta lo que no te sirve con ✕. Abre lo que te gusta y sube en el ranking automáticamente.</p>
+            </div>
+          </div>
+        </div>
+
+        <button id="btn-onboard-next" class="btn-primary btn-ob-cta" type="button">
+          Configurar mi perfil — 30 segundos →
+        </button>
+        <p class="ob-once-note">Solo lo haces una vez. Tu perfil se guarda.</p>
       </div>
-      <p class="hint">¿A qué te dedicas? ¿Qué quieres aprender? ¿Qué contenido odias?
-        <span class="hint-sub"><br>La IA derivará tus semillas, keywords y 3 listas personalizadas.</span>
-      </p>
-      <textarea id="description-input" rows="6" maxlength="1500"
-        placeholder="Ejemplo: Soy consultor de marketing B2B, quiero aprender sobre generación de leads, ventas SaaS y copywriting. Me interesa el desarrollo personal y la productividad. Odio los videos de entretenimiento vacío y clickbait..."></textarea>
-      <div class="char-counter"><span id="char-count">0</span>/1500</div>
-      <button id="btn-save-profile" class="btn-primary" type="button">
-        <span class="btn-label">Generar mi perfil →</span>
-        <span class="btn-spinner hidden" aria-hidden="true"></span>
-      </button>
-      <p id="onboard-error" class="error-msg hidden" role="alert"></p>
     </div>
+
+    <!-- Paso 2: Formulario de perfil -->
+    <div id="onboard-step-2" class="onboard-step">
+      <div class="onboard-card">
+
+        <div class="ob-step-indicator">
+          <span class="ob-dot"></span>
+          <span class="ob-dot ob-dot--active"></span>
+        </div>
+
+        <div class="onboard-header">
+          <span class="onboard-logo">🎯</span>
+          <h2>Cuéntanos sobre ti</h2>
+        </div>
+
+        <p class="hint">
+          Escribe libremente: a qué te dedicas, qué quieres aprender, qué tipo de contenido odias.
+          <span class="hint-sub"><br>La IA leerá esto y generará tu feed personalizado.</span>
+        </p>
+
+        <div class="ob-example-chips">
+          <span class="ob-chip-label">Ejemplos:</span>
+          <button class="ob-chip" type="button" data-text="Soy consultor de ventas B2B, quiero mejorar en generación de leads, CRM y copywriting. Me interesa la productividad y el liderazgo. Odio el clickbait y los videos de motivación vacíos.">Ventas B2B</button>
+          <button class="ob-chip" type="button" data-text="Soy emprendedor, busco aprender sobre marketing digital, automatización y growth hacking. Me interesa el desarrollo personal y los sistemas. Odio los videos de 3+ horas sin estructura.">Emprendedor</button>
+          <button class="ob-chip" type="button" data-text="Soy desarrollador, quiero aprender sobre arquitectura de software, IA aplicada y productividad técnica. Odio los tutoriales básicos y el contenido superficial.">Dev / Tech</button>
+        </div>
+
+        <textarea id="description-input" rows="5" maxlength="1500"
+          placeholder="Ejemplo: Soy consultor de marketing B2B, quiero aprender sobre generación de leads, ventas SaaS y copywriting. Me interesa la productividad y el liderazgo. Odio el clickbait y los videos de entretenimiento vacío..."></textarea>
+        <div class="char-counter"><span id="char-count">0</span>/1500</div>
+
+        <div class="ob-ai-will-create">
+          <p class="ob-ai-label">La IA creará para ti:</p>
+          <div class="ob-ai-items">
+            <span>🔍 Keywords de interés</span>
+            <span>📋 3 listas personalizadas</span>
+            <span>🏆 Tu ranking inicial</span>
+          </div>
+        </div>
+
+        <button id="btn-save-profile" class="btn-primary" type="button">
+          <span class="btn-label">Generar mi perfil →</span>
+          <span class="btn-spinner hidden" aria-hidden="true"></span>
+        </button>
+        <p id="onboard-error" class="error-msg hidden" role="alert"></p>
+
+        <button id="btn-onboard-back" class="btn-ghost" type="button" style="margin-top:.25rem">← Volver</button>
+      </div>
+    </div>
+
   </div>
 
   <!-- ══ Pantalla 3: App principal ══════════════════════════════════════════ -->
