@@ -54,31 +54,179 @@ const state = {
   currentView: 'home', currentListId: null, pendingAddVideoListId: null,
   activeDurFilter: 'all', onlyNew: false,
   sessionMinutes: 45,
+  // Sync
+  _remoteV: 0,  // última versión recibida del servidor
+  _ownV:    0,  // versión que nosotros escribimos (para ignorar nuestros propios saves)
 };
 
 // ── Perfil remoto (Cloudflare KV vía /api/profile) ────────────────────────────
 // Mismo perfil en cualquier dispositivo — sin localStorage, sin login.
 async function fetchProfile() {
-  try { return await apiFetch('/api/profile'); }
+  try {
+    const p = await apiFetch('/api/profile');
+    state._remoteV = p._v || 0;
+    return p;
+  }
   catch (e) { console.warn('fetchProfile:', e.message); return {}; }
 }
 function buildProfilePayload() {
   return {
     description:       state.description,
-    derived_seeds:      state.derivedSeeds,
+    derived_seeds:     state.derivedSeeds,
     interest_keywords: state.keywords,
-    weights:            { ...state.weights },
-    settings:           { mode: state.mode, duration_min: state.durMin, duration_max: state.durMax },
-    feedback:           state.feedback,
-    lists:               state.lists,
-    listItems:          state.listItems,
+    weights:           { ...state.weights },
+    settings:          { mode: state.mode, duration_min: state.durMin, duration_max: state.durMax },
+    feedback:          state.feedback,
+    lists:             state.lists,
+    listItems:         state.listItems,
   };
 }
 function persistProfile() {
+  const v = Date.now();
+  state._ownV = v;
   apiFetch('/api/profile', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(buildProfilePayload()),
+    body: JSON.stringify({ ...buildProfilePayload(), _v: v }),
   }).catch(e => console.warn('persistProfile:', e.message));
+}
+
+// ── Sync en tiempo real (polling 2.5 s con diff inteligente) ──────────────────
+let _syncBusy = false;
+
+function startSyncLoop() {
+  setInterval(async () => {
+    if (_syncBusy || document.hidden) return;
+    _syncBusy = true;
+    try {
+      const remote = await apiFetch('/api/profile');
+      const rv = remote._v || 0;
+      if (!rv || rv === state._remoteV) return;       // sin cambios
+      if (rv === state._ownV) { state._remoteV = rv; return; } // nuestro propio save
+      logger.info('Sync: cambios de otro dispositivo detectados', { rv });
+      applyRemoteDiff(remote);
+      state._remoteV = rv;
+    } catch { /* silencioso */ }
+    finally { _syncBusy = false; }
+  }, 2500);
+}
+
+function applyRemoteDiff(remote) {
+  // ── 1. Lista activa: items añadidos / eliminados / razón actualizada ──────
+  if (state.currentView === 'list' && state.currentListId) {
+    const lid         = state.currentListId;
+    const localItems  = state.listItems[lid]  || {};
+    const remoteItems = remote.listItems?.[lid] || {};
+
+    // Items eliminados en otro dispositivo
+    for (const vid of Object.keys(localItems)) {
+      if (!remoteItems[vid]) {
+        const card = $(`listrow-${CSS.escape(vid)}`);
+        if (card) {
+          card.style.transition = 'opacity .22s, transform .22s';
+          card.style.opacity = '0'; card.style.transform = 'scale(0.97) translateX(8px)';
+          setTimeout(() => { card.remove(); checkListEmpty(lid); }, 240);
+        }
+      }
+    }
+
+    // Items añadidos en otro dispositivo
+    const sorted = Object.entries(remoteItems).sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
+    const total  = sorted.length;
+    sorted.forEach(([vid, data], idx) => {
+      if (!localItems[vid]) {
+        animateListCardIn(vid, data, idx, total);
+        $('list-empty-state')?.classList.add('hidden');
+      } else if (data.reason && data.reason !== localItems[vid].reason) {
+        // Razón IA llegó desde otro dispositivo o background job
+        const el = $(`reason-${CSS.escape(vid)}`);
+        if (el) {
+          el.textContent = data.reason;
+          el.classList.remove('hidden');
+          el.style.transition = 'opacity .3s';
+          el.style.opacity = '0';
+          requestAnimationFrame(() => { el.style.opacity = '1'; });
+        }
+      }
+    });
+
+    // Nombre de lista renombrada
+    const remoteList = (remote.lists || []).find(l => l.id === lid);
+    const nameEl = $('list-view-name');
+    if (remoteList && nameEl && nameEl.textContent !== remoteList.name)
+      nameEl.textContent = remoteList.name;
+  }
+
+  // ── 2. Grid principal: dismissals y clicks desde otro dispositivo ─────────
+  for (const [vid, fb] of Object.entries(remote.feedback || {})) {
+    const local = state.feedback[vid] || {};
+    if (fb.dismissed && !local.dismissed) {
+      const card = $(`card-${CSS.escape(vid)}`);
+      if (card) {
+        card.style.transition = 'opacity .28s, transform .28s';
+        card.style.opacity = '0'; card.style.transform = 'scale(0.92)';
+        setTimeout(() => card.remove(), 300);
+      }
+    }
+    if ((fb.clicks || 0) !== (local.clicks || 0)) {
+      const badge = $(`clk-${CSS.escape(vid)}`);
+      if (badge) {
+        const c = fb.clicks || 0;
+        badge.textContent = `${c} clic${c !== 1 ? 's' : ''}`;
+        badge.classList.toggle('hidden', c === 0);
+      }
+    }
+  }
+
+  // ── 3. Keywords cambiadas ─────────────────────────────────────────────────
+  if (JSON.stringify(remote.interest_keywords) !== JSON.stringify(state.keywords)) {
+    state.keywords = remote.interest_keywords || [];
+    renderKeywordChips();
+  }
+
+  // ── 4. Aplicar todo al estado (pesos, settings, listas, etc.) ────────────
+  applyProfileToState(remote);
+
+  showSyncPulse();
+}
+
+function animateListCardIn(videoId, data, idx, total) {
+  const container = $('list-items-container');
+  if (!container) return;
+  const card = buildListItemRow(videoId, data, idx, total);
+  card.style.opacity = '0';
+  card.style.transform = 'translateY(-10px)';
+  card.style.transition = 'opacity .28s ease, transform .28s ease';
+
+  // Insertar en posición correcta según order
+  const existing = container.querySelectorAll('.list-card');
+  let inserted = false;
+  for (const el of existing) {
+    const elOrder = parseInt(el.dataset.order || '9999');
+    if ((data.order || 0) < elOrder) {
+      container.insertBefore(card, el); inserted = true; break;
+    }
+  }
+  if (!inserted) container.appendChild(card);
+  card.dataset.order = String(data.order || idx);
+
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    card.style.opacity = '1';
+    card.style.transform = 'translateY(0)';
+  }));
+}
+
+function checkListEmpty(listId) {
+  const container = $('list-items-container');
+  const hasCards  = container && container.querySelectorAll('.list-card').length > 0;
+  $('list-empty-state')?.classList.toggle('hidden', hasCards);
+}
+
+function showSyncPulse() {
+  const dot = $('sync-dot');
+  if (!dot) return;
+  dot.classList.remove('sync-dot--pulse');
+  void dot.offsetWidth; // reflow para reiniciar animación
+  dot.classList.add('sync-dot--pulse');
 }
 
 // ── Pantallas ─────────────────────────────────────────────────────────────────
@@ -572,7 +720,7 @@ function renderListView() {
 }
 function buildListItemRow(videoId, data, idx, total) {
   const card = document.createElement('div');
-  card.className = 'list-card'; card.id = `listrow-${CSS.escape(videoId)}`;
+  card.className = 'list-card'; card.id = `listrow-${CSS.escape(videoId)}`; card.dataset.order = String(idx);
 
   const hasReason = data.reason && data.reason.length > 5;
 
@@ -963,8 +1111,9 @@ wireKeywordsUI();
     showScreen('screen-app');
     renderListsBadge();
     loadVideos(true);
+    startSyncLoop();
   } else {
     showScreen('screen-onboard');
   }
-  logger.info('App lista · sin auth · perfil sincronizado · v2.2');
+  logger.info('App lista · sin auth · tiempo real · v2.3');
 })();

@@ -738,6 +738,19 @@ input[type="range"] { accent-color:var(--accent); width:100%; cursor:pointer; }
   .list-card-thumb-link { width:260px; height:auto; aspect-ratio:16/9; flex-shrink:0; }
 }
 
+/* ── Sync dot (indicador de recepción de cambios remotos) ──────────────────── */
+.sync-dot {
+  width:7px; height:7px; border-radius:50%;
+  background:var(--text-dim); flex-shrink:0;
+  transition:background .3s;
+}
+@keyframes sync-ping {
+  0%   { transform:scale(1);   opacity:1;   background:var(--score-hi); }
+  60%  { transform:scale(1.8); opacity:.5;  background:var(--score-hi); }
+  100% { transform:scale(1);   opacity:1;   background:var(--text-dim); }
+}
+.sync-dot--pulse { animation:sync-ping .9s ease forwards; }
+
 /* ── Efectos al guardar en lista ────────────────────────────────────────────── */
 @keyframes saved-pulse {
   0%   { box-shadow:0 0 0 0 var(--accent-glow); border-color:var(--accent); }
