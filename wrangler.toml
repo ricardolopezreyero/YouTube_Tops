@@ -1,0 +1,30 @@
+name = "youtube-tops"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = "public"
+
+# Pages Functions live in ./functions (file-based routing -> /api/*).
+# Libraries (no routing) live in ./src/lib.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "youtube_tops"
+database_id = "REEMPLAZAR"   # <- pega aqui el id que devuelve `wrangler d1 create youtube_tops`
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "REEMPLAZAR"            # <- pega aqui el id que devuelve `wrangler kv namespace create CACHE`
+
+# Workers AI (binding "AI"). Comentado por defecto porque Workers AI NO tiene
+# emulacion local: su binding fuerza una conexion remota que requiere credenciales
+# de Cloudflare y rompe `wrangler pages dev`. El MVP no usa AI (es Roadmap: fase de
+# densidad por subtitulos). Para esa fase, descomenta este bloque y/o configura el
+# binding "AI" en el dashboard de Cloudflare Pages.
+# [ai]
+# binding = "AI"
+
+# Secrets (configurar con `wrangler secret put ...`, NUNCA en el repo):
+#   YOUTUBE_API_KEY   (obligatorio para buscar/enriquecer videos)
+#   APP_PASSWORD      (opcional; si se define, los endpoints lo exigen)
+
+# [triggers]
+# crons = ["0 */6 * * *"]   # TODO (fase posterior): crecer el corpus en segundo plano

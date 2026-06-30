@@ -1,0 +1,21 @@
+# Secrets / entorno (NUNCA commitear)
+.env
+.dev.vars
+*client_secret*.json
+
+# Bases de datos locales
+*.db
+*.sqlite
+*.sqlite3
+
+# Estado local de wrangler / miniflare
+.wrangler/
+
+# Dependencias y artefactos
+node_modules/
+npm-debug.log*
+dist/
+.DS_Store
+
+# Seeds generados en tiempo de ejecucion
+scripts/.seed.generated.sql

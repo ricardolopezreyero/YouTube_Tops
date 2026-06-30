@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Tus mejores joyas de YouTube, sin el algoritmo de retencion." />
+    <title>YouTube Tops — Joyas</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <span class="logo">◆</span>
+        <h1>YouTube&nbsp;Tops</h1>
+      </div>
+      <nav class="modes" id="modes" aria-label="Modos">
+        <button class="mode-btn is-active" data-mode="joyas">Joyas</button>
+        <button class="mode-btn" data-mode="profundidad">Profundidad</button>
+        <button class="mode-btn" data-mode="frescura">Frescura</button>
+        <button class="mode-btn" data-mode="autoridad">Autoridad</button>
+      </nav>
+      <div class="header-actions">
+        <button class="ghost-btn" id="open-algo">⚙ Algoritmo</button>
+        <button class="ghost-btn" id="open-saved">★ Para ver después</button>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- Vista principal: grid de videos -->
+      <section id="view-feed" class="view is-active">
+        <div id="status-bar" class="status-bar" hidden></div>
+        <div id="featured" class="featured" hidden></div>
+        <div id="grid" class="grid" aria-live="polite"></div>
+        <div id="empty" class="empty" hidden>
+          <p>No hay videos todavía.</p>
+          <button class="primary-btn" id="empty-crawl">Buscar joyas</button>
+        </div>
+        <div class="load-more-wrap">
+          <button class="primary-btn load-more" id="load-more" hidden>
+            Cargar más / Buscar joyas
+          </button>
+        </div>
+        <div id="sentinel" class="sentinel"></div>
+      </section>
+
+      <!-- Vista "Para ver despues" -->
+      <section id="view-saved" class="view">
+        <h2 class="view-title">Para ver después <span class="muted">(arrastra para reordenar)</span></h2>
+        <ul id="saved-list" class="saved-list"></ul>
+        <p id="saved-empty" class="empty" hidden>Aún no has guardado videos. Pulsa ★ en una tarjeta.</p>
+      </section>
+    </main>
+
+    <!-- Panel "Algoritmo" -->
+    <aside id="algo-panel" class="panel" aria-hidden="true">
+      <div class="panel-head">
+        <h2>Algoritmo</h2>
+        <button class="icon-btn" id="close-algo" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="panel-body">
+        <p class="hint">Cambia cualquier valor y el feed se re-rankea en vivo. Se guarda automáticamente.</p>
+
+        <h3>Pesos <span class="muted" id="weights-sum"></span></h3>
+        <div id="weights"></div>
+
+        <h3>Duración (segundos)</h3>
+        <div class="row">
+          <label>Mín <input type="number" id="dur-min" min="0" step="30" /></label>
+          <label>Sweet desde <input type="number" id="dur-lo" min="0" step="30" /></label>
+          <label>Sweet hasta <input type="number" id="dur-hi" min="0" step="30" /></label>
+        </div>
+
+        <h3>Intereses <span class="muted">(suben relevancia)</span></h3>
+        <div class="taglist" id="tags-interest"></div>
+        <input type="text" class="tag-input" id="add-interest" placeholder="Añadir interés y Enter…" />
+
+        <h3>Penalizadas <span class="muted">(bajan score)</span></h3>
+        <div class="taglist" id="tags-hate"></div>
+        <input type="text" class="tag-input" id="add-hate" placeholder="Añadir tema a penalizar y Enter…" />
+
+        <h3>Semillas <span class="muted">(búsquedas del crawler)</span></h3>
+        <div class="taglist" id="tags-seeds"></div>
+        <input type="text" class="tag-input" id="add-seed" placeholder="Añadir semilla y Enter…" />
+
+        <div class="panel-foot">
+          <button class="ghost-btn" id="reset-algo">Restaurar defaults</button>
+        </div>
+      </div>
+    </aside>
+    <div id="overlay" class="overlay" hidden></div>
+
+    <!-- Modal "ver por que" -->
+    <div id="why-modal" class="modal" hidden>
+      <div class="modal-card">
+        <div class="panel-head">
+          <h2>¿Por qué este score?</h2>
+          <button class="icon-btn" id="close-why" aria-label="Cerrar">✕</button>
+        </div>
+        <div id="why-body" class="why-body"></div>
+      </div>
+    </div>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>

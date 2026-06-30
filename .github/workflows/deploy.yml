@@ -1,0 +1,40 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install deps
+        run: npm install
+
+      - name: Apply D1 migrations (remote)
+        run: npx wrangler d1 migrations apply youtube_tops --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Deploy (Pages + Functions)
+        run: npx wrangler pages deploy public --project-name=youtube-tops
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+# Requiere en GitHub repo secrets:
+#   CLOUDFLARE_API_TOKEN  (token con permisos de Pages + D1)
+#   CLOUDFLARE_ACCOUNT_ID
+# Los secretos de runtime (YOUTUBE_API_KEY, APP_PASSWORD) se configuran en
+# Cloudflare con `wrangler secret put` o desde el dashboard, NO aqui.
