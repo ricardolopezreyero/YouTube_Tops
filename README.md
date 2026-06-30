@@ -1,248 +1,124 @@
-# YouTube Tops 🎯
+# 🎯 YouTube Tops
 
-> Los mejores videos de YouTube según tu perfil. Sin el algoritmo de retención.
+> **Los mejores videos de YouTube según tu perfil. Sin el algoritmo de retención.**
 
-**Stack**: Firebase Auth · Firestore · Cloudflare Pages · Cloudflare D1 · Cloudflare KV · Workers AI · GitHub Actions
+YouTube Tops es una web app multiusuario que re-rankea el corpus de YouTube usando tu perfil real — lo que aprendes, a qué te dedicas, cuánto tiempo tienes — en lugar del algoritmo que maximiza cuánto tiempo pasas viendo.
 
----
-
-## Arquitectura
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Usuario (browser)                                          │
-│  HTML/CSS/JS vanilla · Firebase Auth SDK (CDN)             │
-└────────────┬───────────────────────────────────────────────┘
-             │ Firebase ID Token (JWT) en Authorization: Bearer
-             ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Cloudflare Pages + Pages Functions                         │
-│                                                             │
-│  POST /api/onboard  → Workers AI (deriva seeds/keywords)   │
-│  GET  /api/videos   → D1 corpus → re-rankea con perfil     │
-└────────────┬───────────────────────────────────────────────┘
-             │
-     ┌───────┴───────┐
-     ▼               ▼
-  D1 (corpus)    Firebase
-  Corpus         Firestore
-  compartido     (perfil por usuario)
-```
-
-**Modelo multiusuario**:
-- El corpus de videos en D1 es **compartido** entre todos los usuarios.
-- Cada usuario **re-rankea** el corpus con sus propios keywords y pesos.
-- La cuota de YouTube no crece con el número de usuarios.
+**→ [youtube-tops.pages.dev](https://youtube-tops.pages.dev)**
 
 ---
 
-## Estado actual del deploy
+## ¿Qué hace diferente a esta app?
 
-| Componente | Estado | Valor |
+| YouTube normal | YouTube Tops |
+|---|---|
+| Te recomienda lo que te engancha | Te recomienda lo que te hace crecer |
+| Optimiza retención de atención | Optimiza profundidad de aprendizaje |
+| El mismo feed para todos | Perfil propio con tus keywords y pesos |
+| No puedes ajustar nada | Sliders en tiempo real para cada factor |
+| Nunca sabes por qué te muestra algo | Score transparente con desglose |
+
+---
+
+## ¿Cómo funciona?
+
+```
+1. Login con Google
+2. Describes tu perfil (a qué te dedicas, qué quieres aprender)
+3. Workers AI deriva tus keywords y crea 3 listas personalizadas
+4. El corpus compartido se re-rankea según TU perfil
+5. Cada clic mejora las recomendaciones. Cada ✕ las afina.
+```
+
+El corpus de videos es **compartido** — no se re-busca por usuario. Cada usuario **re-rankea** el mismo corpus con sus propios pesos. La cuota de YouTube no crece con el número de usuarios.
+
+---
+
+## Funcionalidades
+
+### Para el usuario
+- **Login con Google** — un clic, sin contraseña
+- **Perfil generado por IA** — describes con tus palabras, Workers AI extrae las semillas y keywords
+- **Grid personalizado** — 4 columnas desktop, 2 tablet, 1 móvil. Joya #1 destacada arriba
+- **Panel de pesos** — 6 sliders ajustables en tiempo real: Engagement · Relevancia · Profundidad · Duración · Subtítulos · Autoridad
+- **Contador de clics** — cada video que abres sube en el ranking automáticamente
+- **Botón ✕ Descartar** — oculta videos que no te interesan, para siempre
+- **Listas** — guarda, organiza y reordena videos. La IA crea 3 listas según tu perfil al registrarte
+- **Agregar video por URL** — pega cualquier URL de YouTube, lo busca, te muestra preview y lo guarda en una lista
+- **Score transparente** — cada tarjeta muestra su puntuación y tiene desglose de componentes
+- **Persistencia total** — perfil, feedback y listas se guardan en Firestore entre sesiones
+
+### Para el algoritmo de score
+Cada video recibe un score [0–1] ponderado por los pesos del usuario:
+
+| Factor | Peso por defecto | Lógica |
 |---|---|---|
-| Cloudflare Pages | ✅ Live | https://youtube-tops.pages.dev |
-| D1 database | ✅ Creado | `c53c86e9-7482-4cdc-8679-f50a015efb09` |
-| KV namespace | ✅ Creado | `4af0c9a93b924f9a87041fde33967505` |
-| D1 schema | ✅ Aplicado | 6 tablas |
-| Corpus de videos | ✅ Seeded | 77 videos, 86 canales |
-| YOUTUBE_API_KEY | ✅ Secret CF | Configurado en Pages |
-| FIREBASE_PROJECT_ID | ✅ Var CF | `tops-b68a3` |
-| Firebase Auth config | ⚠️ **Pendiente** | Ver Paso 1 abajo |
-| GitHub CI/CD secret | ⚠️ **Pendiente** | Ver Paso 2 abajo |
+| **Engagement** | 35% | Ratio like/view + comment/view. Penaliza ultra-virales con bajo engagement |
+| **Relevancia** | 25% | Overlap de las keywords del usuario con título y descripción |
+| **Profundidad** | 15% | Palabras como "masterclass", "framework", "deep dive" + capítulos en descripción |
+| **Duración** | 10% | Sweet spot 8–60 min. Decae suavemente fuera del rango |
+| **Subtítulos** | 5% | `contentDetails.caption == true` |
+| **Autoridad** | 10% | `log10(suscriptores)` capeado en 10M — no dominante |
 
 ---
 
-## Lo que queda (solo 2 pasos manuales)
+## Stack técnico
 
-### ⚠️ Paso 1 — Firebase web config (5 min)
-
-La app muestra una pantalla de guía mientras esto no esté configurado.
-
-1. Ve a → [Firebase Console: tops-b68a3 · Configuración](https://console.firebase.google.com/project/tops-b68a3/settings/general)
-2. Baja a **"Tus apps"** → si no hay app Web: clic **"Agregar app"** → ícono **`</>`** → nombre `youtube-tops` → Registrar.
-3. Copia los valores de `apiKey` y `appId` del objeto `firebaseConfig` que aparece.
-4. Edita `public/firebase-config.js`: reemplaza `REPLACE_WITH_FIREBASE_WEB_API_KEY` y `REPLACE_WITH_FIREBASE_APP_ID`.
-5. Ve a → [Firebase Auth → Dominios autorizados](https://console.firebase.google.com/project/tops-b68a3/authentication/settings) → Agregar dominio: `youtube-tops.pages.dev`
-6. Redespliega (necesitas tu Cloudflare API token):
-   ```bash
-   export CLOUDFLARE_API_TOKEN=<tu-token-de-cloudflare>
-   npx wrangler pages deploy public --project-name=youtube-tops
-   ```
-
-### ⚠️ Paso 2 — GitHub Actions secret (2 min)
-
-Para que el CI/CD funcione en futuros pushes a `main`:
-
-1. Ve a → [GitHub: Secrets → Actions](https://github.com/ricardolopezreyero/YouTube_Tops/settings/secrets/actions/new)
-2. Nombre: `CLOUDFLARE_API_TOKEN`
-3. Valor: (el token de Cloudflare que usaste en el Paso 1)
-4. Clic **Add secret**
+```
+Frontend    Cloudflare Pages   HTML/CSS/JS vanilla, mobile-first, sin bundler
+Auth        Firebase Auth      Solo proveedor Google
+Perfil      Firestore          Reglas: solo el dueño lee/escribe su users/{uid}
+Corpus      Cloudflare D1      SQLite compartido entre todos los usuarios
+Caché       Cloudflare KV      Deduplicación de búsquedas
+Backend     CF Pages Functions POST /api/onboard · GET /api/videos · POST /api/add-video
+IA          Workers AI         llama-3.1-8b-instruct (fallback: mistral-7b)
+CI/CD       GitHub Actions     Push a main → wrangler pages deploy
+```
 
 ---
 
-## Setup completo (referencia histórica)
+## Setup (si quieres tu propia instancia)
 
 ### Prerrequisitos
-
 ```bash
 node --version  # ≥ 20
 npm install
-npx wrangler --version  # ≥ 3
-npx wrangler login      # autentícate con Cloudflare
+npx wrangler login
 ```
 
----
-
-### Paso 1 — Firebase
-
-1. Ve a [console.firebase.google.com](https://console.firebase.google.com) y abre el proyecto **YouTube-Tops** (ID: `tops-b68a3`).
-
-2. **Authentication → Método de acceso → Google** → Habilitar.
-
-3. **Configuración del proyecto → Tus apps → Web** → Copia el objeto `firebaseConfig`:
-   ```
-   Firebase Console → ⚙ → Configuración del proyecto → Tus apps → </> (Web)
-   ```
-   Abre `public/firebase-config.js` y reemplaza:
-   - `REPLACE_WITH_FIREBASE_WEB_API_KEY` → tu `apiKey`
-   - `REPLACE_WITH_FIREBASE_APP_ID`      → tu `appId`
-
-4. **Authentication → Configuración → Dominios autorizados** → agrega tu dominio de Cloudflare Pages:
-   ```
-   youtube-tops.pages.dev
-   ```
-   (O el dominio personalizado que uses.)
-
-5. **Firestore → Crear base de datos** (modo producción si no existe).
-
-6. Publicar las reglas de seguridad:
+### 1 — Firebase
+1. Crea un proyecto en [console.firebase.google.com](https://console.firebase.google.com)
+2. Activa **Authentication → Google**
+3. Crea una base de datos **Firestore** (modo producción)
+4. En **Configuración del proyecto → Tus apps → Web** → copia `apiKey` y `appId`
+5. Edita `public/firebase-config.js` con tus valores
+6. Despliega las reglas:
    ```bash
-   npm install -g firebase-tools   # si no está instalado
-   firebase login
-   firebase use tops-b68a3
-   firebase deploy --only firestore:rules
+   firebase deploy --only firestore:rules --project TU_PROJECT_ID
    ```
+7. Agrega tu dominio de Pages a **Authentication → Dominios autorizados**
 
----
-
-### Paso 2 — Cloudflare D1 y KV
-
-Crea los recursos y copia los IDs en `wrangler.toml`:
-
+### 2 — Cloudflare D1 y KV
 ```bash
-# D1 database
 npx wrangler d1 create youtube_tops
-# → Copia el "database_id" en wrangler.toml > [[d1_databases]] > database_id
-
-# KV namespace
 npx wrangler kv namespace create CACHE
-# → Copia el "id" en wrangler.toml > [[kv_namespaces]] > id
+# Pega los IDs resultantes en wrangler.toml
 ```
 
-Edita `wrangler.toml`:
-```toml
-[[d1_databases]]
-  database_id = "PEGA_EL_ID_AQUI"
-
-[[kv_namespaces]]
-  id = "PEGA_EL_ID_AQUI"
-```
-
----
-
-### Paso 3 — Aplicar migración D1
-
+### 3 — Migración y secret
 ```bash
-# Base de datos remota (producción)
 npx wrangler d1 migrations apply youtube_tops --remote
-
-# Para desarrollo local
-npx wrangler d1 migrations apply youtube_tops --local
+npx wrangler secret put YOUTUBE_API_KEY   # tu clave de YouTube Data API v3
 ```
 
----
-
-### Paso 4 — Cloudflare Secret: YOUTUBE_API_KEY
-
-La clave de YouTube **nunca** va al repositorio. Se almacena como Cloudflare Secret:
-
-```bash
-npx wrangler secret put YOUTUBE_API_KEY
-# → Pega tu clave cuando la solicite (AIzaSyAD...)
-```
-
-Para desarrollo local, crea `.dev.vars` (excluido en `.gitignore`):
-```
-YOUTUBE_API_KEY=AIzaSyAD...
-```
-
----
-
-### Paso 5 — Crear proyecto en Cloudflare Pages
-
-```bash
-# Crea el proyecto Pages por primera vez
-npx wrangler pages project create youtube-tops
-```
-
-Después de crear el proyecto, vincula los bindings D1, KV y AI desde el dashboard:
-- [dash.cloudflare.com](https://dash.cloudflare.com) → Pages → youtube-tops → **Settings → Functions**
-  - D1 database bindings: `DB` → `youtube_tops`
-  - KV namespace bindings: `CACHE` → el KV que creaste
-  - Workers AI: `AI` (habilitar en la misma sección)
-- Variables de entorno: `FIREBASE_PROJECT_ID` = `tops-b68a3`
-
----
-
-### Paso 6 — Primer deploy
-
-**Opción A — GitHub Actions (recomendado)**
-
-Agrega el secreto `CLOUDFLARE_API_TOKEN` en tu repositorio:
-- GitHub → Settings → Secrets and variables → Actions → New repository secret
-- Nombre: `CLOUDFLARE_API_TOKEN`
-- Valor: *(el token que creaste en dash.cloudflare.com → My Profile → API Tokens)*
-
-Luego haz push a `main` y GitHub Actions desplegará automáticamente.
-
-**Opción B — Manual**
-
+### 4 — Deploy y seed
 ```bash
 npx wrangler pages deploy public --project-name=youtube-tops
+npm run seed   # puebla D1 con la primera ronda de videos (~1000 unidades de cuota)
 ```
 
----
-
-### Paso 7 — Seed del corpus (ejecutar UNA vez)
-
-Tras el primer deploy, puebla D1 con la primera ronda de videos:
-
-```bash
-# Asegúrate de tener YOUTUBE_API_KEY en .dev.vars o en el entorno
-npm run seed
-```
-
-El script:
-- Llama a YouTube API con las 10 primeras semillas (`SEEDS_DEFAULT` en `config.js`)
-- Enriquece con stats, duración y datos de canal
-- Calcula `score_base` con los pesos por defecto
-- Inserta ~80-120 videos en D1 (deduplicados)
-- Cuota estimada: ~1003 unidades de YouTube Data API
-
----
-
-### Paso 8 — Verificar
-
-Abre tu URL de Cloudflare Pages:
-```
-https://youtube-tops.pages.dev
-```
-
-Flujo esperado:
-1. Pantalla de login → **Continuar con Google**
-2. Si es primer ingreso: escribe tu perfil → **Generar mi perfil** (llama a Workers AI)
-3. Grid de videos rankeados según tu perfil
-4. ⚙️ → ajusta pesos con sliders → **Aplicar y re-rankear**
+### 5 — GitHub Actions (CI/CD automático)
+Agrega `CLOUDFLARE_API_TOKEN` en **GitHub → Settings → Secrets → Actions**.
 
 ---
 
@@ -250,86 +126,47 @@ Flujo esperado:
 
 ```
 /
-├── wrangler.toml                  Configuración Cloudflare Pages
-├── package.json                   Scripts: dev, deploy, seed, db:migrate
-├── config.js                      Seeds, keywords, pesos y presupuestos por defecto
-├── firestore.rules                Reglas de seguridad Firestore
+├── wrangler.toml                   Cloudflare Pages config (D1, KV, AI)
+├── config.js                       Seeds, pesos y presupuesto por defecto
+├── firestore.rules                 Solo el dueño lee/escribe users/{uid}
+├── migrations/0001_init.sql        Esquema D1: 6 tablas
 │
-├── migrations/
-│   └── 0001_init.sql              Esquema D1: videos, channels, search_queue…
+├── functions/api/
+│   ├── onboard.js                  POST /api/onboard  → Workers AI → perfil
+│   ├── videos.js                   GET  /api/videos   → D1 corpus → re-rankeo
+│   └── add-video.js                POST /api/add-video → URL → D1 / YouTube API
 │
-├── functions/api/                 Cloudflare Pages Functions
-│   ├── onboard.js                 POST /api/onboard  (Workers AI → perfil)
-│   └── videos.js                  GET  /api/videos   (D1 → re-rankear)
+├── src/lib/
+│   ├── auth.js                     JWT Firebase RS256 con Web Crypto (sin SDK)
+│   ├── youtube.js                  Cliente YouTube Data API v3
+│   ├── scoring.js                  Algoritmo de re-ranking
+│   ├── ai.js                       Workers AI: perfil + listas sugeridas
+│   └── quota.js                    Cuota YouTube por día en D1
 │
-├── src/lib/                       Librerías compartidas
-│   ├── auth.js                    Verificación JWT Firebase (Web Crypto)
-│   ├── youtube.js                 Cliente YouTube Data API v3
-│   ├── scoring.js                 Algoritmo de re-ranking
-│   ├── ai.js                      Workers AI: derivar perfil
-│   └── quota.js                   Seguimiento de cuota en D1
+├── scripts/seed.js                 npm run seed
 │
-├── scripts/
-│   └── seed.js                    npm run seed
-│
-├── public/                        Archivos estáticos (Cloudflare Pages)
-│   ├── firebase-config.js         Config SDK Firebase (⚠ reemplazar apiKey y appId)
-│   ├── index.html                 SPA: login / onboarding / app
-│   ├── app.js                     Lógica frontend (vanilla JS, ES modules)
-│   └── styles.css                 Estilos mobile-first, dark theme
-│
-└── .github/workflows/
-    └── deploy.yml                 CI/CD: push a main → deploy a CF Pages
+└── public/
+    ├── firebase-config.js          SDK Firebase CDN
+    ├── index.html                  SPA: login / onboarding / app / listas
+    ├── app.js                      Toda la lógica frontend
+    └── styles.css                  Mobile-first dark theme
 ```
 
 ---
 
-## Algoritmo de scoring
+## Roadmap / TODO
 
-Cada video recibe un score compuesto [0–1]:
+Marcados como `// TODO` en el código:
 
-| Componente   | Peso default | Descripción |
-|---|---|---|
-| **Engagement** | 35% | Ratio like/view + comment/view. Penaliza ultra-virales con bajo engagement |
-| **Relevancia** | 25% | Overlap de `interest_keywords` del usuario con título y descripción |
-| **Profundidad** | 15% | `DEPTH_KEYWORDS` presentes + capítulos/timestamps en descripción |
-| **Duración** | 10% | Sweet spot 8–60 min. Decae suavemente fuera del rango |
-| **Subtítulos** | 5% | `contentDetails.caption == true` |
-| **Autoridad** | 10% | `log10(suscriptores)` capeado en 10M. No dominante |
-
-Los pesos son ajustables por usuario vía los sliders del panel.
+- [ ] **Crawler 3 capas** — `search_queue` + `/api/crawl` para explorar videos relacionados
+- [ ] **Cron cada 6h** — crecer el corpus automáticamente en background
+- [ ] **Densidad por subtítulos** — Workers AI analiza el transcript y da un `density score`
+- [ ] **MMR** — diversidad en el ranking (Maximal Marginal Relevance)
+- [ ] **Perfil leído desde el Worker** — en vez de recibir pesos del cliente (más robusto)
+- [ ] **Estados avanzados** — historial de reproducción, notas en videos
 
 ---
 
-## Pendientes / Roadmap (TODO)
+## Licencia
 
-Los siguientes features están marcados como `// TODO` en el código y NO están construidos en el MVP:
-
-1. **Crawler de 3 capas** — `search_queue` + `/api/crawl` "Buscar joyas". Explora videos relacionados en profundidad.
-2. **Cron Trigger cada 6h** — `[triggers] crons = ["0 */6 * * *"]` en `wrangler.toml`. Crece el corpus en background automáticamente.
-3. **Densidad por subtítulos** — Post-carga, baja transcript (`timedtext` o librería), lo muestrea, Workers AI devuelve `{density 0–100, verdict}`, badge en tarjeta, cache en `subtitle_ratings`.
-4. **MMR (diversidad)** — Maximal Marginal Relevance para evitar clusters repetitivos en el ranking.
-5. **Perfil desde Firestore en el Worker** — El Worker lee directamente el perfil del usuario desde Firestore (en lugar de recibirlo del cliente) para mayor robustez anti-tamper.
-6. **Estado por usuario** — Videos vistos / guardados / ocultos.
-7. **Modo local con wrangler** — `npm run dev` con D1 local y Workers AI simulado.
-
----
-
-## Seguridad
-
-- **YOUTUBE_API_KEY**: Cloudflare Secret. Nunca en el repo.
-- **Firebase API key** (`public/firebase-config.js`): pública por diseño (identifica el proyecto, no otorga acceso).
-- **Firestore Rules**: cada usuario sólo puede leer/escribir `users/{uid}` donde `uid == auth.uid`.
-- **Workers JWT Verification**: cada endpoint verifica el Firebase ID token contra las claves públicas de Google (RS256, Web Crypto API). Sin SDK de Firebase en el Worker.
-
----
-
-## Variables de entorno
-
-| Variable | Dónde | Descripción |
-|---|---|---|
-| `YOUTUBE_API_KEY` | Cloudflare Secret | YouTube Data API v3 |
-| `FIREBASE_PROJECT_ID` | `wrangler.toml [vars]` | ID del proyecto Firebase (`tops-b68a3`) |
-| `CLOUDFLARE_API_TOKEN` | GitHub Secret | Para CI/CD con wrangler-action |
-
-Para desarrollo local, usa `.dev.vars` (ver `.env.example`).
+MIT — úsalo, forkéalo, mejóralo.
