@@ -1212,6 +1212,8 @@ async function addVideoToList(listId, videoData) {
   const listName = state.lists.find(l => l.id === listId)?.name || 'lista';
   showToast(`✓ Guardado en "${listName}"`);
   markCardAsSaved(videoData.video_id);
+  // Quitar del feed principal tras el pulso visual (500 ms)
+  setTimeout(() => removeCardFromFeed(videoData.video_id), 500);
   if (state.currentView === 'list' && state.currentListId === listId) renderListView();
 
   // Genera razón en background y actualiza sin bloquear
@@ -1236,6 +1238,18 @@ async function addVideoToList(listId, videoData) {
       }
     }
   } catch { /* razón es opcional, no falla la acción */ }
+}
+
+function removeCardFromFeed(videoId) {
+  const card = $(`card-${CSS.escape(videoId)}`);
+  if (!card) return;
+  card.style.transition = 'opacity .28s ease, transform .28s ease';
+  card.style.opacity    = '0';
+  card.style.transform  = 'scale(0.94) translateY(-4px)';
+  setTimeout(() => {
+    card.remove();
+    state.rawVideos = state.rawVideos.filter(v => v.video_id !== videoId);
+  }, 300);
 }
 
 function markCardAsSaved(videoId) {
