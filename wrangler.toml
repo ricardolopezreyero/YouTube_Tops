@@ -6,12 +6,12 @@ pages_build_output_dir = "public"
 [[d1_databases]]
   binding = "DB"
   database_name = "youtube_tops"
-  database_id = "REEMPLAZAR_CON_D1_DATABASE_ID"
+  database_id = "c53c86e9-7482-4cdc-8679-f50a015efb09"
 
 # ─── KV (caché / deduplicación) ──────────────────────────────────────────────
 [[kv_namespaces]]
   binding = "CACHE"
-  id = "REEMPLAZAR_CON_KV_NAMESPACE_ID"
+  id = "4af0c9a93b924f9a87041fde33967505"
 
 # ─── Workers AI ──────────────────────────────────────────────────────────────
 [ai]

@@ -36,7 +36,51 @@
 
 ---
 
-## Setup completo (paso a paso)
+## Estado actual del deploy
+
+| Componente | Estado | Valor |
+|---|---|---|
+| Cloudflare Pages | ✅ Live | https://youtube-tops.pages.dev |
+| D1 database | ✅ Creado | `c53c86e9-7482-4cdc-8679-f50a015efb09` |
+| KV namespace | ✅ Creado | `4af0c9a93b924f9a87041fde33967505` |
+| D1 schema | ✅ Aplicado | 6 tablas |
+| Corpus de videos | ✅ Seeded | 77 videos, 86 canales |
+| YOUTUBE_API_KEY | ✅ Secret CF | Configurado en Pages |
+| FIREBASE_PROJECT_ID | ✅ Var CF | `tops-b68a3` |
+| Firebase Auth config | ⚠️ **Pendiente** | Ver Paso 1 abajo |
+| GitHub CI/CD secret | ⚠️ **Pendiente** | Ver Paso 2 abajo |
+
+---
+
+## Lo que queda (solo 2 pasos manuales)
+
+### ⚠️ Paso 1 — Firebase web config (5 min)
+
+La app muestra una pantalla de guía mientras esto no esté configurado.
+
+1. Ve a → [Firebase Console: tops-b68a3 · Configuración](https://console.firebase.google.com/project/tops-b68a3/settings/general)
+2. Baja a **"Tus apps"** → si no hay app Web: clic **"Agregar app"** → ícono **`</>`** → nombre `youtube-tops` → Registrar.
+3. Copia los valores de `apiKey` y `appId` del objeto `firebaseConfig` que aparece.
+4. Edita `public/firebase-config.js`: reemplaza `REPLACE_WITH_FIREBASE_WEB_API_KEY` y `REPLACE_WITH_FIREBASE_APP_ID`.
+5. Ve a → [Firebase Auth → Dominios autorizados](https://console.firebase.google.com/project/tops-b68a3/authentication/settings) → Agregar dominio: `youtube-tops.pages.dev`
+6. Redespliega (necesitas tu Cloudflare API token):
+   ```bash
+   export CLOUDFLARE_API_TOKEN=<tu-token-de-cloudflare>
+   npx wrangler pages deploy public --project-name=youtube-tops
+   ```
+
+### ⚠️ Paso 2 — GitHub Actions secret (2 min)
+
+Para que el CI/CD funcione en futuros pushes a `main`:
+
+1. Ve a → [GitHub: Secrets → Actions](https://github.com/ricardolopezreyero/YouTube_Tops/settings/secrets/actions/new)
+2. Nombre: `CLOUDFLARE_API_TOKEN`
+3. Valor: (el token de Cloudflare que usaste en el Paso 1)
+4. Clic **Add secret**
+
+---
+
+## Setup completo (referencia histórica)
 
 ### Prerrequisitos
 
