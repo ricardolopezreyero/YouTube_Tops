@@ -351,6 +351,10 @@
             <h2 id="list-view-name" class="list-view-name"></h2>
             <button id="btn-rename-list" class="btn-ghost btn-icon-sm" type="button" title="Renombrar lista">✏️</button>
           </div>
+          <button id="btn-toggle-archived" class="btn-ghost btn-toggle-archived hidden" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+            <span id="archived-count-label">Archivados</span>
+          </button>
           <button id="btn-delete-list" class="btn-ghost btn-icon-sm btn-danger" type="button" title="Eliminar lista">🗑️</button>
         </div>
         <div id="list-items-container" class="list-items-container" role="list"></div>
@@ -374,6 +378,12 @@
       <div class="list-dropdown-header">Agregar a lista</div>
       <div id="list-dropdown-items" class="list-dropdown-items"></div>
       <button id="list-dropdown-new" class="list-dropdown-new" type="button">+ Nueva lista</button>
+    </div>
+
+    <!-- Dropdown "Mover a lista" -->
+    <div id="move-list-dropdown" class="list-dropdown hidden" role="menu">
+      <div class="list-dropdown-header">Mover a lista</div>
+      <div id="move-list-dropdown-items" class="list-dropdown-items"></div>
     </div>
 
     <!-- Modal: Agregar video por URL -->

@@ -723,14 +723,51 @@ input[type="range"] { accent-color:var(--accent); width:100%; cursor:pointer; }
 }
 .btn-move:hover:not(:disabled) { background:var(--accent); color:#fff; border-color:var(--accent); }
 .btn-move:disabled             { opacity:.3; cursor:not-allowed; }
-.btn-remove-from-list {
+/* Botones de acción unificados */
+.btn-list-action {
   width:28px; height:28px; border-radius:var(--radius-sm);
   background:var(--bg-card2); border:1px solid var(--border);
   color:var(--text-muted); cursor:pointer;
   display:flex; align-items:center; justify-content:center;
-  transition:background var(--t), color var(--t);
+  transition:background var(--t), color var(--t), border-color var(--t);
 }
-.btn-remove-from-list:hover { background:rgba(239,68,68,.18); color:var(--score-lo); border-color:var(--score-lo); }
+.btn-list-action:hover { background:var(--bg-panel); color:var(--text); border-color:var(--accent); }
+.btn-remove-from-list:hover { background:rgba(239,68,68,.18) !important; color:var(--score-lo) !important; border-color:var(--score-lo) !important; }
+.btn-archive-item:hover  { background:rgba(245,158,11,.15) !important; color:var(--score-mid) !important; border-color:var(--score-mid) !important; }
+.btn-unarchive:hover     { background:rgba(34,197,94,.15)  !important; color:var(--score-hi)  !important; border-color:var(--score-hi)  !important; }
+.btn-move-list:hover     { background:var(--accent-glow)   !important; color:var(--accent)    !important; border-color:var(--accent)    !important; }
+.btn-remove-from-list    { } /* hereda .btn-list-action */
+
+/* Tarjeta archivada */
+.list-card--archived {
+  opacity:.55; filter:grayscale(.4);
+  transition:opacity var(--t), filter var(--t);
+}
+.list-card--archived:hover { opacity:.85; filter:grayscale(0); }
+.list-card-archived-badge {
+  position:absolute; top:.4rem; left:.4rem;
+  background:rgba(0,0,0,.7); color:var(--text-muted);
+  font-size:.62rem; font-weight:600; padding:.15rem .45rem;
+  border-radius:4px; letter-spacing:.03em;
+}
+
+/* Separador de archivados */
+.archived-divider {
+  display:flex; align-items:center; gap:.75rem;
+  margin:1.25rem 0 .5rem; color:var(--text-dim); font-size:.78rem;
+}
+.archived-divider::before,
+.archived-divider::after { content:''; flex:1; height:1px; background:var(--border); }
+
+/* Botón toggle archivados en header */
+.btn-toggle-archived {
+  display:flex; align-items:center; gap:.4rem;
+  padding:.35rem .7rem; font-size:.78rem; color:var(--text-muted);
+  border:1px solid var(--border); border-radius:var(--radius-sm);
+  background:var(--bg-card2); cursor:pointer; white-space:nowrap;
+  transition:color var(--t), border-color var(--t);
+}
+.btn-toggle-archived:hover { color:var(--text); border-color:var(--accent); }
 
 /* En desktop: thumbnail a la izquierda */
 @media (min-width:640px) {

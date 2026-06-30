@@ -54,6 +54,7 @@ const state = {
   currentView: 'home', currentListId: null, pendingAddVideoListId: null,
   activeDurFilter: 'all', onlyNew: false,
   sessionMinutes: 45,
+  showArchived: false,
   // Sync
   _remoteV: 0,  // última versión recibida del servidor
   _ownV:    0,  // versión que nosotros escribimos (para ignorar nuestros propios saves)
@@ -710,17 +711,52 @@ function showHomeView() {
 $('btn-back-home').addEventListener('click', showHomeView);
 $('btn-delete-list').addEventListener('click', () => { if (state.currentListId) deleteList(state.currentListId); });
 $('btn-rename-list').addEventListener('click', () => { if (state.currentListId) renameList(state.currentListId); });
+$('btn-toggle-archived').addEventListener('click', () => {
+  state.showArchived = !state.showArchived;
+  renderListView();
+});
 
 function renderListView() {
-  const container = $('list-items-container'); container.innerHTML = '';
-  const items  = state.listItems[state.currentListId] || {};
-  const sorted = Object.entries(items).sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
-  $('list-empty-state').classList.toggle('hidden', sorted.length > 0);
-  sorted.forEach(([videoId, data], idx) => container.appendChild(buildListItemRow(videoId, data, idx, sorted.length)));
+  const lid       = state.currentListId;
+  const container = $('list-items-container');
+  container.innerHTML = '';
+
+  const all      = Object.entries(state.listItems[lid] || {});
+  const active   = all.filter(([, d]) => !d.archived).sort((a, b) => (a[1].order||0) - (b[1].order||0));
+  const archived = all.filter(([, d]) =>  d.archived).sort((a, b) => (a[1].order||0) - (b[1].order||0));
+
+  // Botón de archivados en header
+  const toggleBtn   = $('btn-toggle-archived');
+  const countLabel  = $('archived-count-label');
+  if (archived.length > 0) {
+    toggleBtn.classList.remove('hidden');
+    countLabel.textContent = state.showArchived
+      ? `Ocultar archivados (${archived.length})`
+      : `Archivados (${archived.length})`;
+  } else {
+    toggleBtn.classList.add('hidden');
+  }
+
+  $('list-empty-state').classList.toggle('hidden', active.length > 0 || (state.showArchived && archived.length > 0));
+
+  active.forEach(([vid, data], idx) =>
+    container.appendChild(buildListItemRow(vid, data, idx, active.length, false)));
+
+  if (state.showArchived && archived.length > 0) {
+    const divider = document.createElement('div');
+    divider.className = 'archived-divider';
+    divider.innerHTML = `<span>Archivados</span>`;
+    container.appendChild(divider);
+    archived.forEach(([vid, data], idx) =>
+      container.appendChild(buildListItemRow(vid, data, idx, archived.length, true)));
+  }
 }
-function buildListItemRow(videoId, data, idx, total) {
+
+function buildListItemRow(videoId, data, idx, total, isArchived = false) {
   const card = document.createElement('div');
-  card.className = 'list-card'; card.id = `listrow-${CSS.escape(videoId)}`; card.dataset.order = String(idx);
+  card.className = `list-card${isArchived ? ' list-card--archived' : ''}`;
+  card.id = `listrow-${CSS.escape(videoId)}`;
+  card.dataset.order = String(data.order ?? idx);
 
   const hasReason = data.reason && data.reason.length > 5;
 
@@ -730,11 +766,11 @@ function buildListItemRow(videoId, data, idx, total) {
         ? `<img src="${esc(data.thumbnail_url)}" alt="${esc(data.title)}" class="list-card-thumb" loading="lazy">`
         : `<div class="list-card-thumb-placeholder">▶</div>`}
       <span class="list-card-duration">${fmtDuration(data.duration_s)}</span>
-      <span class="list-card-play-overlay">▶</span>
+      ${isArchived ? '<span class="list-card-archived-badge">Archivado</span>' : '<span class="list-card-play-overlay">▶</span>'}
     </a>
 
     <div class="list-card-body">
-      <div class="list-card-num">${idx + 1}</div>
+      <div class="list-card-num">${isArchived ? '🗄' : idx + 1}</div>
 
       <div class="list-card-content">
         <a href="${esc(data.url)}" target="_blank" rel="noopener noreferrer" class="list-card-title">
@@ -744,25 +780,127 @@ function buildListItemRow(videoId, data, idx, total) {
           <span class="list-card-channel">${esc(data.channel_title)}</span>
           ${data.score ? `<span class="${scoreBadgeClass(data.score)} score-badge" style="font-size:.68rem">Score ${(data.score * 100).toFixed(0)}</span>` : ''}
         </div>
-
         <p id="reason-${CSS.escape(videoId)}" class="list-card-reason${hasReason ? '' : ' hidden'}">
           ${hasReason ? esc(data.reason) : ''}
         </p>
       </div>
 
       <div class="list-card-actions">
-        <button class="btn-move" data-dir="up"   title="Subir"  ${idx === 0         ? 'disabled' : ''}>↑</button>
-        <button class="btn-move" data-dir="down" title="Bajar"  ${idx === total - 1 ? 'disabled' : ''}>↓</button>
-        <button class="btn-remove-from-list" title="Quitar de la lista">
+        ${isArchived ? `
+          <button class="btn-list-action btn-unarchive" title="Restaurar a lista">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/></svg>
+          </button>
+        ` : `
+          <button class="btn-move" data-dir="up"   title="Subir"  ${idx === 0         ? 'disabled' : ''}>↑</button>
+          <button class="btn-move" data-dir="down" title="Bajar"  ${idx === total - 1 ? 'disabled' : ''}>↓</button>
+          <button class="btn-list-action btn-move-list" title="Mover a otra lista">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+          <button class="btn-list-action btn-archive-item" title="Archivar">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+          </button>
+        `}
+        <button class="btn-list-action btn-remove-from-list" title="Eliminar de la lista">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
     </div>`;
 
-  card.querySelectorAll('.btn-move').forEach(btn =>
-    btn.addEventListener('click', () => moveItemInList(state.currentListId, videoId, btn.dataset.dir)));
+  if (!isArchived) {
+    card.querySelectorAll('.btn-move').forEach(btn =>
+      btn.addEventListener('click', () => moveItemInList(state.currentListId, videoId, btn.dataset.dir)));
+    card.querySelector('.btn-move-list').addEventListener('click', e => {
+      e.stopPropagation();
+      showMoveListDropdown(e.currentTarget, state.currentListId, videoId);
+    });
+    card.querySelector('.btn-archive-item').addEventListener('click', () => archiveItem(state.currentListId, videoId));
+  } else {
+    card.querySelector('.btn-unarchive').addEventListener('click', () => unarchiveItem(state.currentListId, videoId));
+  }
   card.querySelector('.btn-remove-from-list').addEventListener('click', () => removeFromList(state.currentListId, videoId));
   return card;
+}
+
+// ── Archivar / Restaurar ──────────────────────────────────────────────────────
+function archiveItem(listId, videoId) {
+  const item = state.listItems[listId]?.[videoId]; if (!item) return;
+  item.archived = true;
+  persistLists();
+  const card = $(`listrow-${CSS.escape(videoId)}`);
+  if (card) {
+    card.style.transition = 'opacity .22s, transform .22s';
+    card.style.opacity = '0'; card.style.transform = 'translateX(12px) scale(0.97)';
+    setTimeout(() => renderListView(), 240);
+  }
+  showToast('Video archivado');
+}
+function unarchiveItem(listId, videoId) {
+  const item = state.listItems[listId]?.[videoId]; if (!item) return;
+  delete item.archived;
+  persistLists();
+  renderListView();
+  showToast('Video restaurado a la lista');
+}
+
+// ── Mover a otra lista ────────────────────────────────────────────────────────
+const moveListDropdown = $('move-list-dropdown');
+let _moveContext = null; // { fromListId, videoId }
+
+function showMoveListDropdown(anchor, fromListId, videoId) {
+  _moveContext = { fromListId, videoId };
+  const items = $('move-list-dropdown-items'); items.innerHTML = '';
+  const targets = state.lists.filter(l => l.id !== fromListId);
+  if (!targets.length) {
+    items.innerHTML = '<p style="padding:.5rem .75rem;font-size:.8rem;color:var(--text-muted)">No hay otras listas</p>';
+  } else {
+    targets.forEach(list => {
+      const btn = document.createElement('button');
+      btn.className = 'list-dropdown-item'; btn.type = 'button'; btn.textContent = list.name;
+      btn.addEventListener('click', () => {
+        moveVideoToAnotherList(fromListId, list.id, videoId);
+        closeMoveDropdown();
+      });
+      items.appendChild(btn);
+    });
+  }
+  const rect = anchor.getBoundingClientRect();
+  moveListDropdown.classList.remove('hidden');
+  moveListDropdown.style.top  = `${rect.bottom + window.scrollY + 4}px`;
+  moveListDropdown.style.left = `${Math.min(rect.left + window.scrollX - 140, window.innerWidth - 210)}px`;
+}
+function closeMoveDropdown() {
+  moveListDropdown.classList.add('hidden'); _moveContext = null;
+}
+document.addEventListener('click', e => {
+  if (!moveListDropdown.classList.contains('hidden')
+    && !moveListDropdown.contains(e.target)
+    && !e.target.closest('.btn-move-list'))
+    closeMoveDropdown();
+});
+
+function moveVideoToAnotherList(fromListId, toListId, videoId) {
+  const data = state.listItems[fromListId]?.[videoId]; if (!data) return;
+  // Copia a destino
+  const destItems = state.listItems[toListId] || {};
+  destItems[videoId] = { ...data, order: Object.keys(destItems).length, archived: false };
+  state.listItems[toListId] = destItems;
+  // Elimina del origen con animación
+  const card = $(`listrow-${CSS.escape(videoId)}`);
+  if (card) {
+    card.style.transition = 'opacity .22s, transform .22s';
+    card.style.opacity = '0'; card.style.transform = 'translateX(16px)';
+    setTimeout(() => {
+      delete state.listItems[fromListId][videoId];
+      persistLists();
+      renderListView();
+    }, 240);
+  } else {
+    delete state.listItems[fromListId][videoId];
+    persistLists();
+    renderListView();
+  }
+  const toName = state.lists.find(l => l.id === toListId)?.name || 'lista';
+  showToast(`✓ Movido a "${toName}"`);
 }
 function moveItemInList(listId, videoId, dir) {
   const items  = state.listItems[listId]; if (!items) return;
