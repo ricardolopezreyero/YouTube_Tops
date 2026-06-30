@@ -370,11 +370,11 @@ textarea:focus {
 .btn-icon:hover { color: var(--text-primary); background: var(--bg-card2); }
 .btn-icon--user { padding: .4rem .5rem; }
 
-/* Mobile: ocultar texto de botones del header, mostrar sólo iconos */
+/* Mobile: ocultar solo el texto de los botones, mantener nombre de la app */
 @media (max-width: 480px) {
   .app-header { padding: .5rem .75rem; }
-  .brand-name { display: none; }
-  .header-brand { font-size: 1.25rem; }
+  .brand-name { font-size: 1rem; }
+  .header-brand { font-size: 1rem; gap: .3rem; }
   .btn-icon .btn-label-text { display: none; }
   .btn-icon { padding: .4rem .5rem; }
   .lists-count-badge { margin-left: .15rem; }
