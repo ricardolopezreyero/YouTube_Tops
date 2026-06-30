@@ -3,7 +3,6 @@
  * Auth-protected. Recibe {description} → Workers AI → devuelve {seeds, keywords, suggested_lists}.
  */
 
-import { requireAuth } from '../../src/lib/auth.js';
 import { deriveProfile } from '../../src/lib/ai.js';
 
 const CORS = {
@@ -19,8 +18,6 @@ export async function onRequestOptions() {
 export async function onRequestPost(context) {
   const { request, env } = context;
   try {
-    const user = await requireAuth(request, env);
-
     let body;
     try { body = await request.json(); }
     catch { return jsonError('Cuerpo no es JSON válido', 400); }
@@ -31,7 +28,7 @@ export async function onRequestPost(context) {
 
     const profile = await deriveProfile(env.AI, description);
 
-    return jsonOk({ uid: user.sub, ...profile });
+    return jsonOk(profile);
   } catch (err) {
     return jsonError(err.message, isAuthError(err) ? 401 : 500);
   }

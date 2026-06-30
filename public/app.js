@@ -1,30 +1,26 @@
 /**
- * app.js – YouTube Tops frontend.
- * Vanilla JS, ES modules. RLR · EYE·181218
+ * app.js – YouTube Tops · sin autenticación · RLR · EYE·181218
  *
- * REGLA CRÍTICA: todos los const deben declararse ANTES de cualquier
- * addEventListener que los referencie en un closure. onAuthStateChanged
- * va al FINAL del módulo para evitar Temporal Dead Zone (TDZ).
+ * Perfil guardado en localStorage (clave: yt_tops_profile).
+ * Backend sin tokens — fetch directo.
+ *
+ * REGLA TDZ: todos los const ANTES de cualquier addEventListener.
  */
 
-import {
-  auth, db, googleProvider,
-  signInWithPopup,
-  onAuthStateChanged, signOut,
-  doc, getDoc, setDoc, updateDoc, serverTimestamp,
-} from './firebase-config.js';
 import { logger } from './logger.js';
 
-// ── Constantes globales (TDZ-safe: primero que todo) ─────────────────────────
-const WEIGHT_KEYS = ['engagement', 'relevance', 'depth', 'duration', 'captions', 'authority'];
+// ── Constantes ────────────────────────────────────────────────────────────────
+const WEIGHT_KEYS   = ['engagement', 'relevance', 'depth', 'duration', 'captions', 'authority'];
+const PROFILE_KEY   = 'yt_tops_profile';
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
+
 function esc(str) {
   return String(str || '').replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
-function pad(n) { return String(n).padStart(2, '0'); }
+function pad(n)        { return String(n).padStart(2, '0'); }
 function fmtDuration(s) {
   if (!s) return '?';
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
@@ -37,33 +33,40 @@ function fmtViews(n) {
        : String(n);
 }
 function scoreBadgeClass(s) { return s >= 0.6 ? 'score-hi' : s >= 0.35 ? 'score-mid' : 'score-lo'; }
-function uid() { return Math.random().toString(36).slice(2, 10); }
+function uid()   { return Math.random().toString(36).slice(2, 10); }
 
-function showToast(msg, duration = 2500) {
+function showToast(msg, ms = 2500) {
   const t = $('toast');
   t.textContent = msg;
   t.classList.remove('hidden');
-  setTimeout(() => t.classList.add('hidden'), duration);
+  setTimeout(() => t.classList.add('hidden'), ms);
+}
+
+// ── localStorage ──────────────────────────────────────────────────────────────
+function loadProfile() {
+  try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null'); }
+  catch { return null; }
+}
+function saveProfileLocal(data) {
+  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(data)); }
+  catch (e) { console.warn('saveProfileLocal:', e.message); }
+}
+function patchProfile(patch) {
+  const p = loadProfile() || {};
+  saveProfileLocal({ ...p, ...patch });
 }
 
 // ── Estado global ─────────────────────────────────────────────────────────────
 const state = {
-  user: null, idToken: null, userProfile: null,
-  rawVideos: [],        // todos los videos cargados (sin filtrar)
-  offset: 0, hasMore: false, loading: false,
-  weights:    { engagement: 35, relevance: 25, depth: 15, duration: 10, captions: 5, authority: 10 },
-  keywords:   [],
+  rawVideos: [], offset: 0, hasMore: false, loading: false,
+  weights:   { engagement: 35, relevance: 25, depth: 15, duration: 10, captions: 5, authority: 10 },
+  keywords:  [],
   durMin: 8, durMax: 60, mode: 'balanced',
-  feedback:   {},       // { videoId: { clicks, dismissed } }
-  lists:      [],       // [{ id, name, order }]
-  listItems:  {},       // { listId: { videoId: {...} } }
-  currentView: 'home',
-  currentListId: null,
-  pendingAddVideoListId: null,
-  // filter bar
-  activeDurFilter: 'all',
-  onlyNew: false,
-  // session
+  feedback:  {},
+  lists:     [],
+  listItems: {},
+  currentView: 'home', currentListId: null, pendingAddVideoListId: null,
+  activeDurFilter: 'all', onlyNew: false,
   sessionMinutes: 45,
 };
 
@@ -73,58 +76,14 @@ function showScreen(id) {
   $(id).classList.add('active');
 }
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
-$('btn-google-login').addEventListener('click', async () => {
-  const btn   = $('btn-google-login');
-  const errEl = $('login-error');
-  errEl.classList.add('hidden');
-  btn.disabled = true;
-  try {
-    await signInWithPopup(auth, googleProvider);
-  } catch (err) {
-    if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-      btn.disabled = false;
-      return;
-    }
-    errEl.textContent = err.message || 'Error al iniciar sesión';
-    errEl.classList.remove('hidden');
-    btn.disabled = false;
-  }
-});
-
-document.addEventListener('click', e => {
-  if (e.target.closest('#btn-logout')) signOut(auth);
-});
-
-async function getToken() {
-  if (!state.user) throw new Error('No hay usuario autenticado');
-  state.idToken = await state.user.getIdToken(false);
-  return state.idToken;
-}
-
+// ── API fetch (sin auth) ──────────────────────────────────────────────────────
 async function apiFetch(url, opts = {}) {
-  const t = logger.time(url);
-  try {
-    const token = await getToken();
-    const res   = await fetch(url, {
-      ...opts,
-      headers: { 'Authorization': `Bearer ${token}`, ...(opts.headers || {}) },
-    });
-    const data = await res.json();
-    if (!res.ok) throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { status: res.status });
-    t.end({ status: res.status });
-    return data;
-  } catch (err) {
-    t.end({ error: err.message });
-    logger.error(`apiFetch ${url}`, { message: err.message });
-    throw err;
-  }
-}
-
-async function saveProfile(data) {
-  if (!state.user) return;
-  try { await setDoc(doc(db, 'users', state.user.uid), data, { merge: true }); }
-  catch (e) { console.warn('saveProfile:', e.message); }
+  const t   = logger.time(url);
+  const res = await fetch(url, opts);
+  const data = await res.json();
+  if (!res.ok) throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { status: res.status });
+  t.end({ status: res.status });
+  return data;
 }
 
 // ── Onboarding ────────────────────────────────────────────────────────────────
@@ -153,32 +112,30 @@ $('btn-save-profile').addEventListener('click', async () => {
   const spinner = btn.querySelector('.btn-spinner');
   errEl.classList.add('hidden');
   const description = descInput.value.trim();
-  if (description.length < 20) { errEl.textContent = 'Por favor escribe al menos 20 caracteres.'; errEl.classList.remove('hidden'); return; }
+  if (description.length < 20) {
+    errEl.textContent = 'Escribe al menos 20 caracteres.';
+    errEl.classList.remove('hidden'); return;
+  }
   btn.disabled = true; label.textContent = 'Procesando…'; spinner.classList.remove('hidden');
   try {
-    const token = await getToken();
-    const res   = await fetch('/api/onboard', {
+    const { seeds, keywords, suggested_lists } = await apiFetch('/api/onboard', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ description }),
     });
-    if (!res.ok) { const d = await res.json(); throw new Error(d.error || `Error ${res.status}`); }
-    const { seeds, keywords, suggested_lists } = await res.json();
+    const newLists = (suggested_lists || ['Ver después', 'Favoritos', 'Comparte esto'])
+      .map((name, i) => ({ id: uid(), name, order: i, created_at: new Date().toISOString() }));
 
-    const newLists = (suggested_lists || ['Ver después', 'Favoritos', 'Comparte esto']).map((name, i) => ({
-      id: uid(), name, order: i, created_at: new Date().toISOString(),
-    }));
     state.keywords  = keywords;
     state.lists     = newLists;
     state.listItems = {};
     newLists.forEach(l => { state.listItems[l.id] = {}; });
 
-    await saveProfile({
+    saveProfileLocal({
       description, derived_seeds: seeds, interest_keywords: keywords,
       weights: { ...state.weights },
       settings: { mode: state.mode, duration_min: state.durMin, duration_max: state.durMax },
       feedback: state.feedback, lists: state.lists, listItems: state.listItems,
-      updated_at: serverTimestamp(),
     });
 
     showScreen('screen-app');
@@ -192,21 +149,25 @@ $('btn-save-profile').addEventListener('click', async () => {
 });
 
 // ── Feedback ──────────────────────────────────────────────────────────────────
-async function trackClick(videoId) {
+function trackClick(videoId) {
   if (!state.feedback[videoId]) state.feedback[videoId] = { clicks: 0, dismissed: false };
   state.feedback[videoId].clicks = (state.feedback[videoId].clicks || 0) + 1;
   const badge = $(`clk-${CSS.escape(videoId)}`);
   const c     = state.feedback[videoId].clicks;
   if (badge) { badge.textContent = `${c} clic${c > 1 ? 's' : ''}`; badge.classList.remove('hidden'); }
-  if (state.user) updateDoc(doc(db, 'users', state.user.uid), { [`feedback.${videoId}.clicks`]: c }).catch(() => {});
+  patchProfile({ feedback: state.feedback });
 }
 
-async function dismissVideo(videoId) {
+function dismissVideo(videoId) {
   if (!state.feedback[videoId]) state.feedback[videoId] = { clicks: 0, dismissed: false };
   state.feedback[videoId].dismissed = true;
   const card = $(`card-${CSS.escape(videoId)}`);
-  if (card) { card.style.transition = 'opacity .25s,transform .25s'; card.style.opacity = '0'; card.style.transform = 'scale(0.9)'; setTimeout(() => card.remove(), 260); }
-  if (state.user) updateDoc(doc(db, 'users', state.user.uid), { [`feedback.${videoId}.dismissed`]: true }).catch(() => {});
+  if (card) {
+    card.style.transition = 'opacity .22s,transform .22s';
+    card.style.opacity = '0'; card.style.transform = 'scale(0.9)';
+    setTimeout(() => card.remove(), 230);
+  }
+  patchProfile({ feedback: state.feedback });
 }
 
 function applyFeedback(videos) {
@@ -220,16 +181,15 @@ function applyFeedback(videos) {
 }
 
 // ── Filter bar ────────────────────────────────────────────────────────────────
-function matchesDurFilter(video, filter) {
-  const s = video.duration_s || 0;
-  if (filter === 'all')    return true;
-  if (filter === 'short')  return s > 0 && s < 900;       // <15min
-  if (filter === 'medium') return s >= 900 && s < 1800;   // 15-30min
-  if (filter === 'long')   return s >= 1800 && s < 3600;  // 30-60min
-  if (filter === 'deep')   return s >= 3600;               // >60min
+function matchesDurFilter(v, f) {
+  const s = v.duration_s || 0;
+  if (f === 'all')    return true;
+  if (f === 'short')  return s > 0 && s < 900;
+  if (f === 'medium') return s >= 900  && s < 1800;
+  if (f === 'long')   return s >= 1800 && s < 3600;
+  if (f === 'deep')   return s >= 3600;
   return true;
 }
-
 function applyFilters(videos) {
   return videos.filter(v => {
     if (!matchesDurFilter(v, state.activeDurFilter)) return false;
@@ -237,19 +197,11 @@ function applyFilters(videos) {
     return true;
   });
 }
-
 function refreshGrid() {
-  const allWithFeedback = applyFeedback(state.rawVideos);
-  const filtered        = applyFilters(allWithFeedback);
-
-  $('featured-section').innerHTML = '';
-  $('featured-section').classList.add('hidden');
+  const filtered = applyFilters(applyFeedback(state.rawVideos));
+  $('featured-section').innerHTML = ''; $('featured-section').classList.add('hidden');
   $('videos-grid').innerHTML = '';
-
-  if (filtered.length === 0) {
-    showEmpty();
-    return;
-  }
+  if (!filtered.length) { showEmpty(); return; }
   renderFeatured(filtered[0]);
   renderGrid(filtered.slice(1), true);
 }
@@ -262,7 +214,6 @@ document.querySelectorAll('.pill:not(.pill--toggle)').forEach(btn => {
     refreshGrid();
   });
 });
-
 $('pill-unwatched').addEventListener('click', () => {
   state.onlyNew = !state.onlyNew;
   $('pill-unwatched').classList.toggle('pill--toggle-on', state.onlyNew);
@@ -270,16 +221,11 @@ $('pill-unwatched').addEventListener('click', () => {
 });
 
 // ── Mi Sesión ─────────────────────────────────────────────────────────────────
-$('btn-session').addEventListener('click', () => {
-  openSessionModal();
-});
-$('btn-close-session').addEventListener('click', () => {
-  $('modal-session').classList.add('hidden');
-});
+$('btn-session').addEventListener('click', openSessionModal);
+$('btn-close-session').addEventListener('click', () => $('modal-session').classList.add('hidden'));
 $('modal-session').addEventListener('click', e => {
   if (e.target === $('modal-session')) $('modal-session').classList.add('hidden');
 });
-
 document.querySelectorAll('.time-preset').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.time-preset').forEach(b => b.classList.remove('time-preset--active'));
@@ -293,53 +239,37 @@ function openSessionModal() {
   $('modal-session').classList.remove('hidden');
   renderSessionPlaylist();
 }
-
 function renderSessionPlaylist() {
-  const targetSec = state.sessionMinutes * 60;
-  const pool      = applyFeedback(state.rawVideos)
+  const target = state.sessionMinutes * 60;
+  const pool   = applyFeedback(state.rawVideos)
     .filter(v => !state.feedback[v.video_id]?.dismissed && (v.duration_s || 0) > 0)
     .sort((a, b) => b.score - a.score);
 
-  // Greedy knapsack: llenar el tiempo con los mejores videos sin pasarse
-  const playlist = [];
-  let totalSec   = 0;
+  const playlist = []; let total = 0;
   for (const v of pool) {
-    if (totalSec + (v.duration_s || 0) <= targetSec + 300) { // +5min de tolerancia
-      playlist.push(v);
-      totalSec += v.duration_s || 0;
-      if (totalSec >= targetSec * 0.85) break; // 85% de llenado = bueno
+    if (total + (v.duration_s || 0) <= target + 300) {
+      playlist.push(v); total += v.duration_s || 0;
+      if (total >= target * 0.85) break;
     }
   }
 
-  const statsEl = $('session-stats');
-  const listEl  = $('session-list');
-  const emptyEl = $('session-empty');
-
+  const emptyEl = $('session-empty'), statsEl = $('session-stats'), listEl = $('session-list');
   if (!playlist.length) {
-    statsEl.innerHTML = '';
-    listEl.innerHTML  = '';
-    emptyEl.classList.remove('hidden');
-    $('btn-save-session').disabled = true;
-    return;
+    emptyEl.classList.remove('hidden'); statsEl.innerHTML = ''; listEl.innerHTML = '';
+    $('btn-save-session').disabled = true; return;
   }
   emptyEl.classList.add('hidden');
   $('btn-save-session').disabled = false;
 
-  const totalMin = Math.round(totalSec / 60);
-  statsEl.innerHTML = `
-    <span>${playlist.length} videos</span>
-    <span>·</span>
-    <span>${totalMin} min total</span>
-    <span>·</span>
+  const totalMin = Math.round(total / 60);
+  statsEl.innerHTML = `<span>${playlist.length} videos</span><span>·</span>
+    <span>${totalMin} min total</span><span>·</span>
     <span>Score prom: ${(playlist.reduce((s, v) => s + v.score, 0) / playlist.length * 100).toFixed(0)}</span>`;
 
   listEl.innerHTML = '';
   playlist.forEach((v, i) => {
     const row = document.createElement('a');
-    row.className = 'session-item';
-    row.href      = v.url;
-    row.target    = '_blank';
-    row.rel       = 'noopener noreferrer';
+    row.className = 'session-item'; row.href = v.url; row.target = '_blank'; row.rel = 'noopener noreferrer';
     row.innerHTML = `
       <span class="session-item-num">${i + 1}</span>
       ${v.thumbnail_url ? `<img src="${esc(v.thumbnail_url)}" alt="" class="session-item-thumb" loading="lazy">` : ''}
@@ -348,13 +278,11 @@ function renderSessionPlaylist() {
         <div class="session-item-meta">${esc(v.channel_title)} · ${fmtDuration(v.duration_s)}</div>
       </div>
       <span class="${scoreBadgeClass(v.score)} score-badge" style="flex-shrink:0;font-size:.7rem">
-        ${(v.score * 100).toFixed(0)}
-      </span>`;
+        ${(v.score * 100).toFixed(0)}</span>`;
     row.addEventListener('click', () => trackClick(v.video_id));
     listEl.appendChild(row);
   });
 
-  // Guardar sesión como lista
   $('btn-save-session').onclick = () => {
     const name = prompt('Nombre para esta sesión:', `Sesión ${state.sessionMinutes} min`);
     if (!name?.trim()) return;
@@ -365,7 +293,7 @@ function renderSessionPlaylist() {
   };
 }
 
-// ── Keywords editables ────────────────────────────────────────────────────────
+// ── Keywords ──────────────────────────────────────────────────────────────────
 function renderKeywordChips() {
   const container = $('keywords-chips');
   if (!container) return;
@@ -376,7 +304,7 @@ function renderKeywordChips() {
     chip.innerHTML = `${esc(kw)}<button class="kw-chip-remove" title="Quitar">×</button>`;
     chip.querySelector('.kw-chip-remove').addEventListener('click', () => {
       state.keywords = state.keywords.filter(k => k !== kw);
-      saveKeywords();
+      patchProfile({ interest_keywords: state.keywords });
       renderKeywordChips();
     });
     container.appendChild(chip);
@@ -384,81 +312,46 @@ function renderKeywordChips() {
   const badge = $('kw-count-badge');
   if (badge) badge.textContent = `${state.keywords.length} tema${state.keywords.length !== 1 ? 's' : ''}`;
 }
-
 function addKeyword(raw) {
   const kw = raw.trim().toLowerCase();
   if (!kw || state.keywords.map(k => k.toLowerCase()).includes(kw)) return false;
   state.keywords.push(kw);
-  saveKeywords();
+  patchProfile({ interest_keywords: state.keywords });
   renderKeywordChips();
   return true;
 }
 
-function saveKeywords() {
-  if (!state.user) return;
-  updateDoc(doc(db, 'users', state.user.uid), {
-    interest_keywords: state.keywords, updated_at: serverTimestamp(),
-  }).catch(e => console.warn('saveKeywords:', e.message));
-}
-
 function wireKeywordsUI() {
-  const input  = $('kw-input');
-  const addBtn = $('btn-add-kw');
+  const input = $('kw-input'), addBtn = $('btn-add-kw');
   if (!input || !addBtn) return;
-
   const doAdd = () => { if (input.value.trim()) { addKeyword(input.value) && (input.value = ''); } };
   addBtn.addEventListener('click', doAdd);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
 
   $('btn-suggest-kw').addEventListener('click', async () => {
-    const btn     = $('btn-suggest-kw');
-    const label   = btn.querySelector('.btn-label');
-    const spinner = btn.querySelector('.btn-spinner');
-    const errEl   = $('kw-error');
-    const wrap    = $('kw-suggestions-wrap');
+    const btn = $('btn-suggest-kw'), label = btn.querySelector('.btn-label'), spinner = btn.querySelector('.btn-spinner');
+    const errEl = $('kw-error'), wrap = $('kw-suggestions-wrap');
     errEl.classList.add('hidden'); wrap.classList.add('hidden');
-
     if (!state.keywords.length) { errEl.textContent = 'Agrega al menos un tema primero.'; errEl.classList.remove('hidden'); return; }
     btn.disabled = true; label.textContent = 'Analizando…'; spinner.classList.remove('hidden');
     try {
-      const token = await getToken();
-      const res   = await fetch('/api/suggest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      const { suggestions } = await apiFetch('/api/suggest', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keywords: state.keywords }),
       });
-      if (!res.ok) { const d = await res.json(); throw new Error(d.error || `Error ${res.status}`); }
-      const { suggestions } = await res.json();
-
-      if (!suggestions.length) { errEl.textContent = 'No se encontraron sugerencias nuevas.'; errEl.classList.remove('hidden'); return; }
-
-      const suggChips = $('kw-suggestion-chips');
-      suggChips.innerHTML = '';
+      if (!suggestions.length) { errEl.textContent = 'Sin sugerencias nuevas.'; errEl.classList.remove('hidden'); return; }
+      const chips = $('kw-suggestion-chips');
+      chips.innerHTML = '';
       suggestions.forEach(kw => {
         const chip = document.createElement('button');
-        chip.className = 'kw-chip kw-chip--suggestion';
-        chip.type      = 'button';
-        chip.textContent = kw;
-        chip.addEventListener('click', () => {
-          addKeyword(kw);
-          chip.classList.add('kw-chip--added');
-          chip.textContent = `✓ ${kw}`;
-          chip.disabled    = true;
-        });
-        suggChips.appendChild(chip);
+        chip.className = 'kw-chip kw-chip--suggestion'; chip.type = 'button'; chip.textContent = kw;
+        chip.addEventListener('click', () => { addKeyword(kw); chip.classList.add('kw-chip--added'); chip.textContent = `✓ ${kw}`; chip.disabled = true; });
+        chips.appendChild(chip);
       });
-
-      $('btn-add-all-kw').onclick = () => {
-        suggestions.forEach(kw => addKeyword(kw));
-        wrap.classList.add('hidden');
-        showToast(`✓ ${suggestions.length} temas agregados`);
-      };
+      $('btn-add-all-kw').onclick = () => { suggestions.forEach(kw => addKeyword(kw)); wrap.classList.add('hidden'); showToast(`✓ ${suggestions.length} temas agregados`); };
       wrap.classList.remove('hidden');
-    } catch (err) {
-      errEl.textContent = err.message; errEl.classList.remove('hidden');
-    } finally {
-      btn.disabled = false; label.textContent = '💡 Sugerir temas que te faltan'; spinner.classList.add('hidden');
-    }
+    } catch (err) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
+    finally { btn.disabled = false; label.textContent = '💡 Sugerir temas que te faltan'; spinner.classList.add('hidden'); }
   });
 }
 
@@ -466,30 +359,28 @@ function wireKeywordsUI() {
 const scorePopover = $('score-popover');
 let popoverTimer   = null;
 
-function showScorePopover(anchorEl, breakdown) {
+function showScorePopover(anchor, breakdown) {
   if (!breakdown) return;
   clearTimeout(popoverTimer);
   const entries = [
-    { label: 'Engagement', val: breakdown.engagement },
-    { label: 'Relevancia', val: breakdown.relevance  },
+    { label: 'Engagement',  val: breakdown.engagement },
+    { label: 'Relevancia',  val: breakdown.relevance  },
     { label: 'Profundidad', val: breakdown.depth      },
-    { label: 'Duración',   val: breakdown.duration   },
-    { label: 'Subtítulos', val: breakdown.captions   },
-    { label: 'Autoridad',  val: breakdown.authority  },
+    { label: 'Duración',    val: breakdown.duration   },
+    { label: 'Subtítulos',  val: breakdown.captions   },
+    { label: 'Autoridad',   val: breakdown.authority  },
   ];
-  scorePopover.innerHTML = `
-    <div class="popover-title">Score breakdown</div>
-    ${entries.map(e => `
+  scorePopover.innerHTML = `<div class="popover-title">Score breakdown</div>` +
+    entries.map(e => `
       <div class="popover-row">
         <span>${e.label}</span>
         <div class="popover-bar-wrap"><div class="popover-bar" style="width:${Math.round(e.val * 100)}%"></div></div>
         <span class="popover-val">${(e.val * 100).toFixed(0)}</span>
-      </div>`).join('')}`;
+      </div>`).join('');
 
-  const rect = anchorEl.getBoundingClientRect();
   scorePopover.classList.remove('hidden');
-  const pw = scorePopover.offsetWidth;
-  const ph = scorePopover.offsetHeight;
+  const rect = anchor.getBoundingClientRect();
+  const pw   = scorePopover.offsetWidth, ph = scorePopover.offsetHeight;
   let left = rect.left + window.scrollX;
   let top  = rect.bottom + window.scrollY + 6;
   if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
@@ -497,13 +388,10 @@ function showScorePopover(anchorEl, breakdown) {
   scorePopover.style.left = `${left}px`;
   scorePopover.style.top  = `${top}px`;
 }
-
-function hideScorePopover() {
-  popoverTimer = setTimeout(() => scorePopover.classList.add('hidden'), 150);
-}
-
+function hideScorePopover() { popoverTimer = setTimeout(() => scorePopover.classList.add('hidden'), 150); }
 scorePopover.addEventListener('mouseenter', () => clearTimeout(popoverTimer));
 scorePopover.addEventListener('mouseleave', hideScorePopover);
+window.addEventListener('scroll', () => scorePopover.classList.add('hidden'), { passive: true });
 
 // ── Panel de parámetros ───────────────────────────────────────────────────────
 const paramsPanel = $('params-panel');
@@ -515,51 +403,37 @@ btnParams.addEventListener('click', () => {
   paramsPanel.classList.toggle('hidden', !h);
   btnParams.setAttribute('aria-expanded', String(h));
   closeListsPanel();
+  if (h) {
+    const p = loadProfile();
+    const inline = $('profile-desc-inline');
+    if (inline && p?.description) inline.value = p.description;
+    renderKeywordChips();
+    $('kw-suggestions-wrap')?.classList.add('hidden');
+  }
 });
 $('btn-close-params').addEventListener('click', () => {
-  paramsPanel.classList.add('hidden');
-  btnParams.setAttribute('aria-expanded', 'false');
+  paramsPanel.classList.add('hidden'); btnParams.setAttribute('aria-expanded', 'false');
 });
 
-// Sync perfil inline al abrir el panel
-btnParams.addEventListener('click', () => {
-  const desc   = state.userProfile?.description || '';
-  const inline = $('profile-desc-inline');
-  if (inline && desc && inline.value !== desc) inline.value = desc;
-  renderKeywordChips();
-  $('kw-suggestions-wrap')?.classList.add('hidden');
-}, { capture: true });
-
 $('btn-update-profile').addEventListener('click', async () => {
-  const btn     = $('btn-update-profile');
-  const label   = btn.querySelector('.btn-label');
-  const spinner = btn.querySelector('.btn-spinner');
-  const errEl   = $('profile-inline-error');
-  const okEl    = $('profile-inline-ok');
+  const btn = $('btn-update-profile'), label = btn.querySelector('.btn-label'), spinner = btn.querySelector('.btn-spinner');
+  const errEl = $('profile-inline-error'), okEl = $('profile-inline-ok');
   errEl.classList.add('hidden'); okEl.classList.add('hidden');
   const description = $('profile-desc-inline').value.trim();
   if (description.length < 20) { errEl.textContent = 'Escribe al menos 20 caracteres.'; errEl.classList.remove('hidden'); return; }
   btn.disabled = true; label.textContent = 'Procesando…'; spinner.classList.remove('hidden');
   try {
-    const token = await getToken();
-    const res   = await fetch('/api/onboard', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    const { seeds, keywords } = await apiFetch('/api/onboard', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ description }),
     });
-    if (!res.ok) { const d = await res.json(); throw new Error(d.error || `Error ${res.status}`); }
-    const { seeds, keywords } = await res.json();
     state.keywords = keywords;
-    if (state.userProfile) state.userProfile.description = description;
-    await saveProfile({ description, derived_seeds: seeds, interest_keywords: keywords, updated_at: serverTimestamp() });
-    okEl.classList.remove('hidden');
-    setTimeout(() => okEl.classList.add('hidden'), 3000);
+    patchProfile({ description, derived_seeds: seeds, interest_keywords: keywords });
+    renderKeywordChips();
+    okEl.classList.remove('hidden'); setTimeout(() => okEl.classList.add('hidden'), 3000);
     loadVideos(true);
-  } catch (err) {
-    errEl.textContent = err.message; errEl.classList.remove('hidden');
-  } finally {
-    btn.disabled = false; label.textContent = 'Actualizar perfil →'; spinner.classList.add('hidden');
-  }
+  } catch (err) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
+  finally { btn.disabled = false; label.textContent = 'Actualizar perfil →'; spinner.classList.add('hidden'); }
 });
 
 WEIGHT_KEYS.forEach(key => {
@@ -577,25 +451,20 @@ document.querySelectorAll('.mode-card').forEach(card => {
       c.classList.toggle('mode-card--active', c.dataset.mode === mode);
       c.setAttribute('aria-checked', String(c.dataset.mode === mode));
     });
-    $('mode-select').value = mode;
-    state.mode = mode;
-    applyModePreset(mode);
+    $('mode-select').value = mode; state.mode = mode; applyModePreset(mode);
   });
 });
-
 function syncModeCards(mode) {
   document.querySelectorAll('.mode-card').forEach(c => {
     c.classList.toggle('mode-card--active', c.dataset.mode === mode);
     c.setAttribute('aria-checked', String(c.dataset.mode === mode));
   });
 }
-
 function updateWeightsSum() {
   const t = WEIGHT_KEYS.reduce((s, k) => s + state.weights[k], 0);
   weightsSum.textContent = `Σ = ${t}`;
   weightsSum.className   = `badge ${t === 100 ? 'badge--ok' : t > 100 ? 'badge--err' : 'badge--warn'}`;
 }
-
 function applyModePreset(mode) {
   const P = {
     depth:    { engagement: 25, relevance: 30, depth: 25, duration: 10, captions: 5, authority:  5 },
@@ -607,20 +476,15 @@ function applyModePreset(mode) {
   updateWeightsSum();
 }
 
-$('btn-apply-params').addEventListener('click', async () => {
-  if (state.user)
-    updateDoc(doc(db, 'users', state.user.uid), {
-      weights: { ...state.weights },
-      settings: { mode: state.mode, duration_min: state.durMin, duration_max: state.durMax },
-      updated_at: serverTimestamp(),
-    }).catch(() => {});
-  paramsPanel.classList.add('hidden');
-  btnParams.setAttribute('aria-expanded', 'false');
+$('btn-apply-params').addEventListener('click', () => {
+  patchProfile({ weights: { ...state.weights }, settings: { mode: state.mode, duration_min: state.durMin, duration_max: state.durMax } });
+  paramsPanel.classList.add('hidden'); btnParams.setAttribute('aria-expanded', 'false');
   loadVideos(true);
 });
 
 // ── Panel de Listas ───────────────────────────────────────────────────────────
-const listsPanel = $('lists-panel');
+const listsPanel  = $('lists-panel');
+const listDropdown = $('list-dropdown');
 
 $('btn-lists').addEventListener('click', () => {
   const isHidden = listsPanel.classList.contains('hidden');
@@ -631,213 +495,152 @@ $('btn-lists').addEventListener('click', () => {
 $('btn-close-lists').addEventListener('click', closeListsPanel);
 
 function closeListsPanel() {
-  listsPanel.classList.add('hidden');
-  $('btn-lists').setAttribute('aria-expanded', 'false');
+  listsPanel.classList.add('hidden'); $('btn-lists').setAttribute('aria-expanded', 'false');
 }
-
 function renderListsBadge() {
   const badge = $('lists-count-badge');
   badge.textContent = state.lists.length;
   badge.classList.toggle('hidden', state.lists.length === 0);
 }
-
 function renderListsDirectory() {
-  const dir = $('lists-directory');
-  dir.innerHTML = '';
+  const dir = $('lists-directory'); dir.innerHTML = '';
   if (!state.lists.length) {
-    dir.innerHTML = '<p class="lists-empty-hint">Aún no tienes listas.<br>Crea una con el botón de arriba.</p>';
-    return;
+    dir.innerHTML = '<p class="lists-empty-hint">Sin listas aún.<br>Crea una con el botón de arriba.</p>'; return;
   }
   [...state.lists].sort((a, b) => a.order - b.order).forEach(list => {
     const count = Object.keys(state.listItems[list.id] || {}).length;
     const btn   = document.createElement('button');
-    btn.className = 'list-dir-item';
-    btn.type      = 'button';
+    btn.className = 'list-dir-item'; btn.type = 'button';
     btn.innerHTML = `<span class="list-dir-name">${esc(list.name)}</span><span class="list-dir-count">${count} video${count !== 1 ? 's' : ''}</span>`;
     btn.addEventListener('click', () => { closeListsPanel(); showListView(list.id); });
     dir.appendChild(btn);
   });
 }
-
-$('btn-create-list').addEventListener('click', () => promptCreateList());
-
-function promptCreateList(defaultName = '') {
-  const name = prompt('Nombre de la nueva lista:', defaultName || '');
-  if (!name?.trim()) return;
-  createList(name.trim());
-}
+$('btn-create-list').addEventListener('click', () => {
+  const name = prompt('Nombre de la nueva lista:', '');
+  if (name?.trim()) createList(name.trim());
+});
 
 function createList(name) {
   const newList = { id: uid(), name, order: state.lists.length, created_at: new Date().toISOString() };
-  state.lists.push(newList);
-  state.listItems[newList.id] = {};
-  persistLists();
-  renderListsBadge();
-  renderListsDirectory();
-  showToast(`Lista "${name}" creada`);
-  return newList;
+  state.lists.push(newList); state.listItems[newList.id] = {};
+  persistLists(); renderListsBadge(); renderListsDirectory();
+  showToast(`Lista "${name}" creada`); return newList;
 }
-
 function deleteList(listId) {
-  if (!confirm('¿Eliminar esta lista y todos sus videos?')) return;
-  state.lists     = state.lists.filter(l => l.id !== listId);
-  delete state.listItems[listId];
-  persistLists();
-  renderListsBadge();
-  showHomeView();
-  showToast('Lista eliminada');
+  if (!confirm('¿Eliminar esta lista?')) return;
+  state.lists = state.lists.filter(l => l.id !== listId); delete state.listItems[listId];
+  persistLists(); renderListsBadge(); showHomeView(); showToast('Lista eliminada');
 }
-
 function renameList(listId) {
-  const list = state.lists.find(l => l.id === listId);
-  if (!list) return;
+  const list = state.lists.find(l => l.id === listId); if (!list) return;
   const name = prompt('Nuevo nombre:', list.name);
   if (!name?.trim() || name.trim() === list.name) return;
-  list.name = name.trim();
-  persistLists();
-  $('list-view-name').textContent = list.name;
-  showToast('Lista renombrada');
+  list.name = name.trim(); persistLists(); $('list-view-name').textContent = list.name; showToast('Lista renombrada');
 }
-
-function persistLists() {
-  if (!state.user) return;
-  updateDoc(doc(db, 'users', state.user.uid), {
-    lists: state.lists, listItems: state.listItems, updated_at: serverTimestamp(),
-  }).catch(e => console.warn('persistLists:', e.message));
-}
+function persistLists() { patchProfile({ lists: state.lists, listItems: state.listItems }); }
 
 // ── Vista de Lista ────────────────────────────────────────────────────────────
 function showListView(listId) {
-  const list = state.lists.find(l => l.id === listId);
-  if (!list) return;
-  state.currentView   = 'list';
-  state.currentListId = listId;
-  $('home-view').classList.add('hidden');
-  $('list-view').classList.remove('hidden');
-  $('list-view-name').textContent = list.name;
-  renderListView();
+  const list = state.lists.find(l => l.id === listId); if (!list) return;
+  state.currentView = 'list'; state.currentListId = listId;
+  $('home-view').classList.add('hidden'); $('list-view').classList.remove('hidden');
+  $('list-view-name').textContent = list.name; renderListView();
 }
-
 function showHomeView() {
-  state.currentView   = 'home';
-  state.currentListId = null;
-  $('list-view').classList.add('hidden');
-  $('home-view').classList.remove('hidden');
+  state.currentView = 'home'; state.currentListId = null;
+  $('list-view').classList.add('hidden'); $('home-view').classList.remove('hidden');
 }
-
 $('btn-back-home').addEventListener('click', showHomeView);
 $('btn-delete-list').addEventListener('click', () => { if (state.currentListId) deleteList(state.currentListId); });
 $('btn-rename-list').addEventListener('click', () => { if (state.currentListId) renameList(state.currentListId); });
 
 function renderListView() {
-  const container = $('list-items-container');
-  container.innerHTML = '';
+  const container = $('list-items-container'); container.innerHTML = '';
   const items  = state.listItems[state.currentListId] || {};
   const sorted = Object.entries(items).sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
   $('list-empty-state').classList.toggle('hidden', sorted.length > 0);
   sorted.forEach(([videoId, data], idx) => container.appendChild(buildListItemRow(videoId, data, idx, sorted.length)));
 }
-
 function buildListItemRow(videoId, data, idx, total) {
-  const row     = document.createElement('div');
-  row.className = 'list-item-row';
-  row.id        = `listrow-${CSS.escape(videoId)}`;
+  const row = document.createElement('div');
+  row.className = 'list-item-row'; row.id = `listrow-${CSS.escape(videoId)}`;
   row.innerHTML = `
     <div class="list-item-thumb-wrap">
-      ${data.thumbnail_url ? `<img src="${esc(data.thumbnail_url)}" alt="${esc(data.title)}" loading="lazy" class="list-item-thumb">` : `<div class="list-item-thumb-placeholder">▶</div>`}
+      ${data.thumbnail_url ? `<img src="${esc(data.thumbnail_url)}" alt="" class="list-item-thumb" loading="lazy">` : `<div class="list-item-thumb-placeholder">▶</div>`}
       <span class="video-duration">${fmtDuration(data.duration_s)}</span>
     </div>
     <div class="list-item-info">
-      <a href="${esc(data.url)}" target="_blank" rel="noopener noreferrer" class="list-item-title"
-         onclick="window.trackClickExternal && window.trackClickExternal('${videoId}')">${esc(data.title)}</a>
+      <a href="${esc(data.url)}" target="_blank" rel="noopener noreferrer" class="list-item-title">${esc(data.title)}</a>
       <div class="list-item-meta">
         <span>${esc(data.channel_title)}</span>
-        ${data.score ? `<span class="${scoreBadgeClass(data.score)} score-badge" style="font-size:.7rem">Score ${(data.score * 100).toFixed(0)}</span>` : ''}
+        ${data.score ? `<span class="${scoreBadgeClass(data.score)} score-badge" style="font-size:.68rem">Score ${(data.score * 100).toFixed(0)}</span>` : ''}
       </div>
     </div>
     <div class="list-item-actions">
-      <button class="btn-move" data-dir="up"   data-id="${videoId}" title="Subir"  ${idx === 0           ? 'disabled' : ''}>↑</button>
-      <button class="btn-move" data-dir="down" data-id="${videoId}" title="Bajar"  ${idx === total - 1   ? 'disabled' : ''}>↓</button>
-      <button class="btn-remove-from-list" data-id="${videoId}" title="Quitar">✕</button>
+      <button class="btn-move" data-dir="up"   data-id="${videoId}" ${idx === 0           ? 'disabled' : ''}>↑</button>
+      <button class="btn-move" data-dir="down" data-id="${videoId}" ${idx === total - 1   ? 'disabled' : ''}>↓</button>
+      <button class="btn-remove-from-list" data-id="${videoId}">✕</button>
     </div>`;
-  row.querySelectorAll('.btn-move').forEach(btn => {
-    btn.addEventListener('click', () => moveItemInList(state.currentListId, videoId, btn.dataset.dir));
-  });
+  row.querySelectorAll('.btn-move').forEach(btn =>
+    btn.addEventListener('click', () => moveItemInList(state.currentListId, videoId, btn.dataset.dir)));
   row.querySelector('.btn-remove-from-list').addEventListener('click', () => removeFromList(state.currentListId, videoId));
   return row;
 }
-
-window.trackClickExternal = videoId => trackClick(videoId);
-
 function moveItemInList(listId, videoId, dir) {
-  const items  = state.listItems[listId];
-  if (!items) return;
+  const items  = state.listItems[listId]; if (!items) return;
   const sorted = Object.entries(items).sort((a, b) => (a[1].order || 0) - (b[1].order || 0));
   const idx    = sorted.findIndex(([id]) => id === videoId);
   const swap   = dir === 'up' ? idx - 1 : idx + 1;
   if (swap < 0 || swap >= sorted.length) return;
   [sorted[idx][1].order, sorted[swap][1].order] = [sorted[swap][1].order, sorted[idx][1].order];
-  persistLists();
-  renderListView();
+  persistLists(); renderListView();
 }
-
 function removeFromList(listId, videoId) {
-  delete state.listItems[listId][videoId];
-  persistLists();
+  delete state.listItems[listId][videoId]; persistLists();
   const row = $(`listrow-${CSS.escape(videoId)}`);
-  if (row) { row.style.transition = 'opacity .2s'; row.style.opacity = '0'; setTimeout(() => row.remove(), 220); }
-  const remaining = Object.keys(state.listItems[listId] || {}).length;
-  $('list-empty-state').classList.toggle('hidden', remaining > 0);
+  if (row) { row.style.opacity = '0'; setTimeout(() => row.remove(), 220); }
+  $('list-empty-state').classList.toggle('hidden', Object.keys(state.listItems[listId] || {}).length > 0);
   showToast('Video quitado de la lista');
 }
-
 function addVideoToList(listId, videoData) {
   const items = state.listItems[listId] || {};
   if (items[videoData.video_id]) { showToast('Ya está en esta lista'); return; }
   items[videoData.video_id] = {
-    order:         Object.keys(items).length,
-    added_at:      new Date().toISOString(),
-    title:         videoData.title,
-    channel_title: videoData.channel_title,
-    thumbnail_url: videoData.thumbnail_url,
-    url:           videoData.url,
-    duration_s:    videoData.duration_s || videoData.duration_seconds,
-    score:         videoData.score || videoData.score_base || 0,
+    order: Object.keys(items).length, added_at: new Date().toISOString(),
+    title: videoData.title, channel_title: videoData.channel_title,
+    thumbnail_url: videoData.thumbnail_url, url: videoData.url,
+    duration_s: videoData.duration_s || videoData.duration_seconds,
+    score: videoData.score || 0,
   };
-  state.listItems[listId] = items;
-  persistLists();
-  const listName = state.lists.find(l => l.id === listId)?.name || 'lista';
-  showToast(`✓ Guardado en "${listName}"`);
+  state.listItems[listId] = items; persistLists();
+  showToast(`✓ Guardado en "${state.lists.find(l => l.id === listId)?.name || 'lista'}"`);
   if (state.currentView === 'list' && state.currentListId === listId) renderListView();
 }
 
 // ── Dropdown "Agregar a lista" ────────────────────────────────────────────────
 let _dropdownVideoData = null;
-const listDropdown     = $('list-dropdown');
 
-function showListDropdown(anchorEl, videoData) {
+function showListDropdown(anchor, videoData) {
   _dropdownVideoData = videoData;
-  const items = $('list-dropdown-items');
-  items.innerHTML = '';
+  const items = $('list-dropdown-items'); items.innerHTML = '';
   if (!state.lists.length) {
-    items.innerHTML = '<p style="padding:.5rem .75rem;color:var(--text-muted);font-size:.8125rem">Sin listas aún</p>';
+    items.innerHTML = '<p style="padding:.5rem .75rem;color:var(--text-muted);font-size:.8rem">Sin listas aún</p>';
   } else {
     state.lists.forEach(list => {
       const inList = !!state.listItems[list.id]?.[videoData.video_id];
       const btn    = document.createElement('button');
       btn.className = `list-dropdown-item${inList ? ' list-dropdown-item--saved' : ''}`;
-      btn.type      = 'button';
-      btn.textContent = inList ? `✓ ${list.name}` : list.name;
+      btn.type = 'button'; btn.textContent = inList ? `✓ ${list.name}` : list.name;
       btn.addEventListener('click', () => { if (!inList) addVideoToList(list.id, videoData); closeDropdown(); });
       items.appendChild(btn);
     });
   }
-  const rect = anchorEl.getBoundingClientRect();
+  const rect = anchor.getBoundingClientRect();
   listDropdown.classList.remove('hidden');
   listDropdown.style.top  = `${rect.bottom + window.scrollY + 4}px`;
   listDropdown.style.left = `${Math.min(rect.left + window.scrollX, window.innerWidth - 220)}px`;
 }
-
 function closeDropdown() { listDropdown.classList.add('hidden'); _dropdownVideoData = null; }
 
 $('list-dropdown-new').addEventListener('click', () => {
@@ -847,7 +650,6 @@ $('list-dropdown-new').addEventListener('click', () => {
   const newList = createList(name.trim());
   if (_dropdownVideoData) { addVideoToList(newList.id, _dropdownVideoData); _dropdownVideoData = null; }
 });
-
 document.addEventListener('click', e => {
   if (!listDropdown.classList.contains('hidden') && !listDropdown.contains(e.target) && !e.target.closest('.btn-bookmark'))
     closeDropdown();
@@ -864,24 +666,18 @@ function openAddVideoModal(preselectedListId = null) {
   $('video-url-input').focus();
   populateModalListSelect(preselectedListId);
 }
-
-function closeModal() { $('modal-add-video').classList.add('hidden'); state.pendingAddVideoListId = null; }
+function closeModal() { $('modal-add-video').classList.add('hidden'); }
 
 function populateModalListSelect(preselected) {
-  const sel = $('modal-list-select');
-  sel.innerHTML = '';
-  if (!state.lists.length) {
-    sel.innerHTML = '<option value="__new__">+ Crear nueva lista…</option>';
-    return;
-  }
+  const sel = $('modal-list-select'); sel.innerHTML = '';
   state.lists.forEach(list => {
     const opt = document.createElement('option');
-    opt.value   = list.id; opt.textContent = list.name;
+    opt.value = list.id; opt.textContent = list.name;
     if (list.id === preselected) opt.selected = true;
     sel.appendChild(opt);
   });
   const newOpt = document.createElement('option');
-  newOpt.value = '__new__'; newOpt.textContent = '+ Crear nueva lista…';
+  newOpt.value = '__new__'; newOpt.textContent = '+ Nueva lista…';
   sel.appendChild(newOpt);
 }
 
@@ -891,40 +687,25 @@ $('btn-open-add-video-bar').addEventListener('click',  () => openAddVideoModal(n
 $('btn-open-add-video-list').addEventListener('click', () => openAddVideoModal(state.currentListId));
 
 $('btn-fetch-video').addEventListener('click', async () => {
-  const btn     = $('btn-fetch-video');
-  const label   = btn.querySelector('.btn-label');
-  const spinner = btn.querySelector('.btn-spinner');
-  const url     = $('video-url-input').value.trim();
-  const errEl   = $('modal-error');
+  const btn = $('btn-fetch-video'), label = btn.querySelector('.btn-label'), spinner = btn.querySelector('.btn-spinner');
+  const url = $('video-url-input').value.trim(), errEl = $('modal-error');
   errEl.classList.add('hidden');
   if (!url) { errEl.textContent = 'Pega una URL de YouTube primero.'; errEl.classList.remove('hidden'); return; }
   btn.disabled = true; label.textContent = 'Buscando…'; spinner.classList.remove('hidden');
   try {
-    const token = await getToken();
-    const res   = await fetch('/api/add-video', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ url }),
+    const { video } = await apiFetch('/api/add-video', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }),
     });
-    if (!res.ok) { const d = await res.json(); throw new Error(d.error || `Error ${res.status}`); }
-    const { video } = await res.json();
-    const preview   = $('video-preview');
-    preview.innerHTML = `
-      <div class="modal-preview">
-        ${video.thumbnail_url ? `<img src="${esc(video.thumbnail_url)}" alt="${esc(video.title)}" class="modal-preview-thumb">` : ''}
-        <div class="modal-preview-info">
-          <div class="modal-preview-title">${esc(video.title)}</div>
-          <div class="modal-preview-meta">${esc(video.channel_title)} · ${fmtDuration(video.duration_s)}</div>
-        </div>
-      </div>`;
+    const preview = $('video-preview');
+    preview.innerHTML = `<div class="modal-preview">
+      ${video.thumbnail_url ? `<img src="${esc(video.thumbnail_url)}" alt="" class="modal-preview-thumb">` : ''}
+      <div><div class="modal-preview-title">${esc(video.title)}</div>
+      <div class="modal-preview-meta">${esc(video.channel_title)} · ${fmtDuration(video.duration_s)}</div></div></div>`;
     preview.classList.remove('hidden');
     btn.dataset.videoData = JSON.stringify(video);
     $('modal-list-select-wrap').classList.remove('hidden');
-  } catch (err) {
-    errEl.textContent = err.message; errEl.classList.remove('hidden');
-  } finally {
-    btn.disabled = false; label.textContent = 'Buscar video'; spinner.classList.add('hidden');
-  }
+  } catch (err) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
+  finally { btn.disabled = false; label.textContent = 'Buscar video'; spinner.classList.add('hidden'); }
 });
 
 $('btn-confirm-add-video').addEventListener('click', async () => {
@@ -932,14 +713,10 @@ $('btn-confirm-add-video').addEventListener('click', async () => {
   if (!videoData) { $('modal-error').textContent = 'Primero busca un video.'; $('modal-error').classList.remove('hidden'); return; }
   let listId = $('modal-list-select').value;
   if (listId === '__new__') {
-    const name = prompt('Nombre de la nueva lista:', '');
-    if (!name?.trim()) return;
-    const newList = createList(name.trim());
-    listId = newList.id;
-    populateModalListSelect(listId);
+    const name = prompt('Nombre de la nueva lista:', ''); if (!name?.trim()) return;
+    listId = createList(name.trim()).id; populateModalListSelect(listId);
   }
-  addVideoToList(listId, videoData);
-  closeModal();
+  addVideoToList(listId, videoData); closeModal();
 });
 
 // ── Cargar videos ─────────────────────────────────────────────────────────────
@@ -954,86 +731,48 @@ async function loadVideos(reset = false) {
   }
   showLoading(true); hideStates();
   try {
-    const token  = await getToken();
     const params = new URLSearchParams({
-      offset:   String(state.offset),
-      limit:    '20',
-      weights:  JSON.stringify(state.weights),
-      keywords: JSON.stringify(state.keywords),
+      offset: String(state.offset), limit: '20',
+      weights: JSON.stringify(state.weights), keywords: JSON.stringify(state.keywords),
     });
-    const t   = logger.time('/api/videos');
-    const res = await fetch(`/api/videos?${params}`, { headers: { 'Authorization': `Bearer ${token}` } });
-    if (!res.ok) {
-      if (res.status === 401) { logger.warn('401 en /api/videos, cerrando sesión'); await signOut(auth); return; }
-      const d = await res.json().catch(() => ({})); throw new Error(d.error || `Error ${res.status}`);
-    }
-    const { videos, total, hasMore } = await res.json();
-    t.end({ returned: videos.length, total, offset: state.offset });
-
-    state.hasMore = hasMore;
-    state.offset += videos.length;
+    const { videos, total, hasMore } = await apiFetch(`/api/videos?${params}`);
+    state.hasMore = hasMore; state.offset += videos.length;
     state.rawVideos.push(...videos);
-
     const adjusted = applyFeedback(videos);
     if (reset && total === 0) { showEmpty(); return; }
-
-    if (reset && adjusted.length > 0) {
-      renderFeatured(adjusted[0]);
-      renderGrid(adjusted.slice(1), true);
-    } else {
-      renderGrid(adjusted, false);
-    }
-
+    if (reset && adjusted.length > 0) { renderFeatured(adjusted[0]); renderGrid(adjusted.slice(1), true); }
+    else renderGrid(adjusted, false);
     $('load-more-area').classList.toggle('hidden', !hasMore);
-    $('add-video-bar').classList.remove('hidden');
-
-    // Mostrar filter bar una vez que hay videos
     if (state.rawVideos.length > 0) $('filter-bar').classList.remove('hidden');
-
-  } catch (err) {
-    showError(err.message);
-  } finally {
-    state.loading = false; showLoading(false);
-  }
+  } catch (err) { showError(err.message); }
+  finally { state.loading = false; showLoading(false); }
 }
-
 $('btn-load-more').addEventListener('click', () => loadVideos(false));
 $('btn-retry').addEventListener('click', () => loadVideos(true));
 
 // ── Renderizar ────────────────────────────────────────────────────────────────
 function renderFeatured(v) {
-  const sec = $('featured-section');
-  sec.innerHTML = '';
-  sec.appendChild(buildFeaturedCard(v));
-  sec.classList.remove('hidden');
+  const sec = $('featured-section'); sec.innerHTML = '';
+  sec.appendChild(buildFeaturedCard(v)); sec.classList.remove('hidden');
 }
-
 function renderGrid(videos, reset) {
-  const grid = $('videos-grid');
-  if (reset) grid.innerHTML = '';
+  const grid = $('videos-grid'); if (reset) grid.innerHTML = '';
   videos.forEach(v => grid.appendChild(buildVideoCard(v)));
 }
-
 function buildFeaturedCard(v) {
-  const a    = document.createElement('a');
-  a.className = 'featured-card';
-  a.href      = v.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-  a.id        = `card-${v.video_id}`;
-  a.setAttribute('role', 'listitem');
+  const a = document.createElement('a');
+  a.className = 'featured-card'; a.href = v.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  a.id = `card-${v.video_id}`; a.setAttribute('role', 'listitem');
   a.innerHTML = `
     <span class="featured-badge">🏆 Joya #1</span>
     ${v.thumbnail_url ? `<img class="featured-thumb" src="${esc(v.thumbnail_url)}" alt="${esc(v.title)}" loading="lazy">` : `<div class="featured-thumb video-thumb-placeholder">▶</div>`}
     <div class="featured-info">
       <div class="video-title">${esc(v.title)}</div>
-      <div class="video-meta">
-        <span class="video-channel">${esc(v.channel_title)}</span>
-        <span class="video-views">${fmtViews(v.view_count)} vistas</span>
-        <span>${fmtDuration(v.duration_s)}</span>
-      </div>
-      <div class="video-score-row" style="margin-top:.75rem;gap:.5rem">
+      <div class="video-meta"><span class="video-channel">${esc(v.channel_title)}</span><span>${fmtViews(v.view_count)} vistas</span><span>${fmtDuration(v.duration_s)}</span></div>
+      <div class="video-score-row" style="margin-top:.75rem">
         <span class="${scoreBadgeClass(v.score)} score-badge score-badge--clickable" data-video-id="${v.video_id}">Score ${(v.score * 100).toFixed(0)}</span>
         ${v.breakdown?.captions ? '<span class="captions-badge">CC</span>' : ''}
-        <span class="clicks-badge${(v.clicks || 0) === 0 ? ' hidden' : ''}" id="clk-${v.video_id}">${v.clicks || 0} clic${(v.clicks || 0) !== 1 ? 's' : ''}</span>
+        <span class="clicks-badge${(v.clicks||0)===0?' hidden':''}" id="clk-${v.video_id}">${v.clicks||0} clic${(v.clicks||0)!==1?'s':''}</span>
       </div>
     </div>`;
   a.appendChild(buildDismissBtn(v.video_id));
@@ -1043,16 +782,12 @@ function buildFeaturedCard(v) {
     if (e.target.closest('.score-badge--clickable')) { e.preventDefault(); return; }
     trackClick(v.video_id);
   });
-  wireScorebadge(a, v);
-  return a;
+  wireScorebadge(a, v); return a;
 }
-
 function buildVideoCard(v) {
-  const a    = document.createElement('a');
-  a.className = 'video-card';
-  a.href      = v.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-  a.id        = `card-${v.video_id}`;
-  a.setAttribute('role', 'listitem');
+  const a = document.createElement('a');
+  a.className = 'video-card'; a.href = v.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  a.id = `card-${v.video_id}`; a.setAttribute('role', 'listitem');
   a.innerHTML = `
     <div class="video-thumb-wrap">
       ${v.thumbnail_url ? `<img class="video-thumb" src="${esc(v.thumbnail_url)}" alt="${esc(v.title)}" loading="lazy">` : `<div class="video-thumb-placeholder">▶</div>`}
@@ -1060,16 +795,11 @@ function buildVideoCard(v) {
     </div>
     <div class="video-info">
       <div class="video-title">${esc(v.title)}</div>
-      <div class="video-meta">
-        <span class="video-channel">${esc(v.channel_title)}</span>
-        <span class="video-views">${fmtViews(v.view_count)}</span>
-      </div>
+      <div class="video-meta"><span class="video-channel">${esc(v.channel_title)}</span><span>${fmtViews(v.view_count)}</span></div>
       <div class="video-score-row">
-        <span class="${scoreBadgeClass(v.score)} score-badge score-badge--clickable" data-video-id="${v.video_id}">Score ${(v.score * 100).toFixed(0)}</span>
-        <div style="display:flex;gap:.3rem;align-items:center">
-          ${v.breakdown?.captions ? '<span class="captions-badge">CC</span>' : ''}
-          <span class="clicks-badge${(v.clicks || 0) === 0 ? ' hidden' : ''}" id="clk-${v.video_id}">${v.clicks || 0} clic${(v.clicks || 0) !== 1 ? 's' : ''}</span>
-        </div>
+        <span class="${scoreBadgeClass(v.score)} score-badge score-badge--clickable">Score ${(v.score * 100).toFixed(0)}</span>
+        <span class="clicks-badge${(v.clicks||0)===0?' hidden':''}" id="clk-${v.video_id}">${v.clicks||0} clic${(v.clicks||0)!==1?'s':''}</span>
+        ${v.breakdown?.captions ? '<span class="captions-badge">CC</span>' : ''}
       </div>
     </div>`;
   a.appendChild(buildDismissBtn(v.video_id));
@@ -1079,45 +809,31 @@ function buildVideoCard(v) {
     if (e.target.closest('.score-badge--clickable')) { e.preventDefault(); return; }
     trackClick(v.video_id);
   });
-  wireScorebadge(a, v);
-  return a;
+  wireScorebadge(a, v); return a;
 }
-
 function wireScorebadge(cardEl, v) {
   if (!v.breakdown) return;
-  const badge = cardEl.querySelector('.score-badge--clickable');
-  if (!badge) return;
+  const badge = cardEl.querySelector('.score-badge--clickable'); if (!badge) return;
   badge.addEventListener('mouseenter', () => showScorePopover(badge, v.breakdown));
   badge.addEventListener('mouseleave', hideScorePopover);
   badge.addEventListener('click', e => {
     e.preventDefault(); e.stopPropagation();
-    if (scorePopover.classList.contains('hidden')) {
-      showScorePopover(badge, v.breakdown);
-    } else {
-      scorePopover.classList.add('hidden');
-    }
+    scorePopover.classList.contains('hidden') ? showScorePopover(badge, v.breakdown) : scorePopover.classList.add('hidden');
   });
 }
-
 function buildDismissBtn(videoId) {
   const btn = document.createElement('button');
-  btn.className   = 'btn-dismiss';
-  btn.title       = 'No me interesa';
-  btn.type        = 'button';
-  btn.innerHTML   = '×';
+  btn.className = 'btn-dismiss'; btn.title = 'No me interesa'; btn.type = 'button'; btn.innerHTML = '×';
   btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); dismissVideo(videoId); });
   return btn;
 }
-
 function buildBookmarkBtn(videoData) {
   const btn = document.createElement('button');
-  btn.className = 'btn-bookmark';
-  btn.title     = 'Guardar en lista';
-  btn.type      = 'button';
+  btn.className = 'btn-bookmark'; btn.title = 'Guardar en lista'; btn.type = 'button';
   btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
   btn.addEventListener('click', e => {
     e.preventDefault(); e.stopPropagation();
-    if (!state.lists.length) { promptCreateList(); return; }
+    if (!state.lists.length) { const name = prompt('Nombre de la nueva lista:', ''); if (name?.trim()) createList(name.trim()); return; }
     showListDropdown(btn, videoData);
   });
   return btn;
@@ -1125,74 +841,46 @@ function buildBookmarkBtn(videoData) {
 
 // ── Estado UI ─────────────────────────────────────────────────────────────────
 function showLoading(show) { $('loading').classList.toggle('hidden', !show); }
-function hideStates() {
-  $('empty-state').classList.add('hidden');
-  $('error-state').classList.add('hidden');
-  $('load-more-area').classList.add('hidden');
-}
-function showEmpty()      { $('empty-state').classList.remove('hidden'); }
-function showError(msg)   { $('error-state-msg').textContent = msg; $('error-state').classList.remove('hidden'); }
+function hideStates() { $('empty-state').classList.add('hidden'); $('error-state').classList.add('hidden'); $('load-more-area').classList.add('hidden'); }
+function showEmpty()    { $('empty-state').classList.remove('hidden'); }
+function showError(msg) { $('error-state-msg').textContent = msg; $('error-state').classList.remove('hidden'); }
 
-// ── Perfil al estado ──────────────────────────────────────────────────────────
-function applyProfileToState(profile) {
-  state.userProfile = profile;
-  const inline = $('profile-desc-inline');
-  if (inline && profile.description) inline.value = profile.description;
-  if (profile.interest_keywords?.length) { state.keywords = profile.interest_keywords; renderKeywordChips(); }
-  if (profile.feedback)   state.feedback   = profile.feedback;
-  if (profile.lists)      state.lists      = profile.lists;
-  if (profile.listItems)  state.listItems  = profile.listItems;
+// ── Aplicar perfil al estado ──────────────────────────────────────────────────
+function applyProfileToState(p) {
+  if (!p) return;
+  if (p.interest_keywords?.length) { state.keywords = p.interest_keywords; renderKeywordChips(); }
+  if (p.feedback)   state.feedback   = p.feedback;
+  if (p.lists)      state.lists      = p.lists;
+  if (p.listItems)  state.listItems  = p.listItems;
   state.lists.forEach(l => { if (!state.listItems[l.id]) state.listItems[l.id] = {}; });
-  if (profile.weights) {
-    Object.assign(state.weights, profile.weights);
+  if (p.weights) {
+    Object.assign(state.weights, p.weights);
     WEIGHT_KEYS.forEach(k => {
       const s = $(`w-${k}`), o = $(`w-${k}-val`);
       if (s && state.weights[k] !== undefined) { s.value = state.weights[k]; o.textContent = state.weights[k]; }
     });
     updateWeightsSum();
   }
-  if (profile.settings) {
-    const s = profile.settings;
-    if (s.mode)         { state.mode    = s.mode;         $('mode-select').value = s.mode;     syncModeCards(s.mode); }
-    if (s.duration_min) { state.durMin  = s.duration_min; $('dur-min').value = s.duration_min; $('dur-min-val').textContent = s.duration_min; }
-    if (s.duration_max) { state.durMax  = s.duration_max; $('dur-max').value = s.duration_max; $('dur-max-val').textContent = s.duration_max; }
+  if (p.settings) {
+    const s = p.settings;
+    if (s.mode)         { state.mode = s.mode; $('mode-select').value = s.mode; syncModeCards(s.mode); }
+    if (s.duration_min) { state.durMin = s.duration_min; $('dur-min').value = s.duration_min; $('dur-min-val').textContent = s.duration_min; }
+    if (s.duration_max) { state.durMax = s.duration_max; $('dur-max').value = s.duration_max; $('dur-max-val').textContent = s.duration_max; }
   }
 }
 
-// ── Cerrar popover al hacer scroll ────────────────────────────────────────────
-window.addEventListener('scroll', () => scorePopover.classList.add('hidden'), { passive: true });
-
-// ── Inicialización final ──────────────────────────────────────────────────────
+// ── Inicio: sin auth, directo desde localStorage ──────────────────────────────
 updateWeightsSum();
 wireKeywordsUI();
 
-// onAuthStateChanged al FINAL del módulo: todos los const ya están inicializados.
-onAuthStateChanged(auth, async user => {
-  state.user = user;
+const storedProfile = loadProfile();
+if (storedProfile?.interest_keywords?.length) {
+  applyProfileToState(storedProfile);
+  showScreen('screen-app');
+  renderListsBadge();
+  loadVideos(true);
+} else {
+  showScreen('screen-onboard');
+}
 
-  if (!user) {
-    Object.assign(state, { userProfile: null, idToken: null, feedback: {}, lists: [], listItems: {} });
-    showScreen('screen-login');
-    return;
-  }
-
-  try {
-    state.idToken = await user.getIdToken();
-    let snap = null;
-    try { snap = await getDoc(doc(db, 'users', user.uid)); }
-    catch { showScreen('screen-onboard'); return; }
-
-    if (!snap.exists() || !snap.data()?.interest_keywords?.length) {
-      showScreen('screen-onboard');
-    } else {
-      applyProfileToState(snap.data());
-      showScreen('screen-app');
-      renderListsBadge();
-      loadVideos(true);
-    }
-  } catch {
-    showScreen('screen-onboard');
-  }
-});
-
-logger.info('App lista', { v: '2.0' });
+logger.info('App lista · sin auth · v2.1');

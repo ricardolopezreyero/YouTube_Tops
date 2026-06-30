@@ -4,7 +4,6 @@
  * usando Workers AI para proponer temas relacionados que el usuario no mencionó.
  */
 
-import { requireAuth } from '../../src/lib/auth.js';
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -19,7 +18,6 @@ export async function onRequestOptions() {
 export async function onRequestPost(context) {
   const { request, env } = context;
   try {
-    await requireAuth(request, env);
     const body     = await request.json().catch(() => ({}));
     const keywords = Array.isArray(body.keywords) ? body.keywords : [];
 

@@ -7,7 +7,6 @@
  * 4. Devuelve los datos del video listos para mostrar en el cliente.
  */
 
-import { requireAuth } from '../../src/lib/auth.js';
 import { enrichVideos, parseDuration, detectChapters, formatChannel } from '../../src/lib/youtube.js';
 import { scoreBase } from '../../src/lib/scoring.js';
 
@@ -24,8 +23,6 @@ export async function onRequestOptions() {
 export async function onRequestPost(context) {
   const { request, env } = context;
   try {
-    await requireAuth(request, env);
-
     let body;
     try { body = await request.json(); }
     catch { return jsonError('Cuerpo no es JSON válido', 400); }

@@ -5,7 +5,6 @@
  * NO llama a YouTube.
  */
 
-import { requireAuth } from '../../src/lib/auth.js';
 import { scoreVideo } from '../../src/lib/scoring.js';
 import { WEIGHTS_DEFAULT, CORPUS_FETCH_LIMIT, PAGE_SIZE } from '../../config.js';
 
@@ -22,8 +21,6 @@ export async function onRequestOptions() {
 export async function onRequestGet(context) {
   const { request, env } = context;
   try {
-    await requireAuth(request, env);
-
     const url    = new URL(request.url);
     const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0'));
     const limit  = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || String(PAGE_SIZE))));
