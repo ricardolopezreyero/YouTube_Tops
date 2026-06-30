@@ -79,6 +79,24 @@
     <aside id="params-panel" class="params-panel hidden">
       <div class="params-inner">
         <h3>Parámetros de ranking</h3>
+
+        <!-- ── Perfil (inline, siempre visible) ── -->
+        <section class="params-section params-section--profile">
+          <h4>Mi perfil</h4>
+          <p class="params-profile-hint">La IA re-derivará tus keywords y reordenará el feed.</p>
+          <textarea id="profile-desc-inline" rows="4" maxlength="1500"
+            placeholder="A qué te dedicas, qué quieres aprender, qué contenido odias..."></textarea>
+          <button id="btn-update-profile" class="btn-profile-update" type="button">
+            <span class="btn-label">Actualizar perfil →</span>
+            <span class="btn-spinner hidden"></span>
+          </button>
+          <p id="profile-inline-error" class="error-msg hidden" role="alert"></p>
+          <p id="profile-inline-ok" class="profile-ok-msg hidden">✓ Perfil actualizado</p>
+        </section>
+
+        <div class="params-divider"></div>
+
+        <!-- ── Pesos ── -->
         <section class="params-section">
           <div class="params-section-header">
             <h4>Pesos del score</h4>
@@ -91,11 +109,15 @@
           <div class="slider-row"><label for="w-captions">Subtítulos</label><input type="range" id="w-captions" min="0" max="30" value="5"><output id="w-captions-val" for="w-captions">5</output><span>%</span></div>
           <div class="slider-row"><label for="w-authority">Autoridad</label><input type="range" id="w-authority" min="0" max="40" value="10"><output id="w-authority-val" for="w-authority">10</output><span>%</span></div>
         </section>
+
+        <!-- ── Duración ── -->
         <section class="params-section">
           <h4>Duración de video</h4>
           <div class="slider-row"><label for="dur-min">Mínimo</label><input type="range" id="dur-min" min="1" max="30" value="8"><output id="dur-min-val" for="dur-min">8</output><span>min</span></div>
           <div class="slider-row"><label for="dur-max">Máximo</label><input type="range" id="dur-max" min="10" max="180" value="60"><output id="dur-max-val" for="dur-max">60</output><span>min</span></div>
         </section>
+
+        <!-- ── Modo ── -->
         <section class="params-section">
           <h4>Modo</h4>
           <select id="mode-select">
@@ -104,9 +126,9 @@
             <option value="quick">Quick wins (&lt;15 min)</option>
           </select>
         </section>
+
         <div class="params-actions">
           <button id="btn-apply-params" class="btn-primary" type="button">Aplicar y re-rankear</button>
-          <button id="btn-edit-profile" class="btn-secondary" type="button">Editar mi perfil</button>
           <button id="btn-close-params" class="btn-ghost" type="button">Cerrar</button>
         </div>
       </div>
@@ -133,6 +155,23 @@
 
       <!-- ── Home view ──────────────────────────────────────────────── -->
       <div id="home-view" class="videos-wrapper">
+
+        <!-- Filter bar (aparece tras cargar videos) -->
+        <div id="filter-bar" class="filter-bar hidden">
+          <div class="filter-pills" role="group" aria-label="Filtrar por duración">
+            <button class="pill pill--active" data-dur="all">Todos</button>
+            <button class="pill" data-dur="short">&lt;15 min</button>
+            <button class="pill" data-dur="medium">15–30 min</button>
+            <button class="pill" data-dur="long">30–60 min</button>
+            <button class="pill" data-dur="deep">&gt;60 min</button>
+            <button class="pill pill--toggle" id="pill-unwatched">Solo nuevos</button>
+          </div>
+          <button id="btn-session" class="btn-session" type="button" title="Cuéntame cuánto tiempo tienes y armo tu sesión perfecta">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Mi Sesión
+          </button>
+        </div>
+
         <div id="featured-section" class="featured-section hidden"></div>
         <div id="videos-grid" class="videos-grid" role="list"></div>
 
@@ -228,6 +267,37 @@
         <p id="modal-error" class="error-msg hidden" role="alert"></p>
       </div>
     </div>
+
+    <!-- Modal: Mi Sesión -->
+    <div id="modal-session" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="session-title">
+      <div class="modal-card modal-session-card">
+        <div class="modal-header">
+          <div>
+            <h3 id="session-title">⏱ Mi Sesión</h3>
+            <p class="session-subtitle">El algoritmo selecciona los mejores videos para tu ventana de tiempo.</p>
+          </div>
+          <button id="btn-close-session" class="btn-ghost btn-icon-sm" type="button">✕</button>
+        </div>
+        <div class="session-time-picker">
+          <button class="time-preset" data-min="15">15 min</button>
+          <button class="time-preset" data-min="30">30 min</button>
+          <button class="time-preset time-preset--active" data-min="45">45 min</button>
+          <button class="time-preset" data-min="60">1 hora</button>
+          <button class="time-preset" data-min="90">90 min</button>
+        </div>
+        <div id="session-stats" class="session-stats"></div>
+        <div id="session-list" class="session-list"></div>
+        <div id="session-empty" class="state-msg hidden">
+          <p>Carga más videos para poder armar una sesión.</p>
+        </div>
+        <div class="session-actions">
+          <button id="btn-save-session" class="btn-secondary" type="button">💾 Guardar sesión como lista</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Score breakdown popover (compartido) -->
+    <div id="score-popover" class="score-popover hidden" role="tooltip"></div>
 
     <!-- Toast de confirmación -->
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>

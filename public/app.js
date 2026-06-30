@@ -204,10 +204,49 @@ $('btn-apply-params').addEventListener('click',async()=>{
   paramsPanel.classList.add('hidden'); btnParams.setAttribute('aria-expanded','false');
   loadVideos(true);
 });
-$('btn-edit-profile').addEventListener('click',()=>{
-  paramsPanel.classList.add('hidden');
-  showScreen('screen-onboard');
-  if(state.userProfile?.description){ descInput.value=state.userProfile.description; charCount.textContent=descInput.value.length; }
+
+// ── Perfil inline en el panel de parámetros ───────────────────────────────────
+// Sincronizar textarea con el perfil actual al abrir el panel
+btnParams.addEventListener('click', () => {
+  const desc = state.userProfile?.description || '';
+  const inline = $('profile-desc-inline');
+  if (inline && desc && inline.value !== desc) inline.value = desc;
+}, { capture: true });
+
+$('btn-update-profile').addEventListener('click', async () => {
+  const btn     = $('btn-update-profile');
+  const label   = btn.querySelector('.btn-label');
+  const spinner = btn.querySelector('.btn-spinner');
+  const errEl   = $('profile-inline-error');
+  const okEl    = $('profile-inline-ok');
+  errEl.classList.add('hidden'); okEl.classList.add('hidden');
+
+  const description = $('profile-desc-inline').value.trim();
+  if (description.length < 20) {
+    errEl.textContent = 'Escribe al menos 20 caracteres.';
+    errEl.classList.remove('hidden'); return;
+  }
+  btn.disabled = true; label.textContent = 'Procesando…'; spinner.classList.remove('hidden');
+  try {
+    const token = await getToken();
+    const res = await fetch('/api/onboard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ description }),
+    });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error || `Error ${res.status}`); }
+    const { seeds, keywords } = await res.json();
+    state.keywords = keywords;
+    if (state.userProfile) state.userProfile.description = description;
+    await saveProfile({ description, derived_seeds: seeds, interest_keywords: keywords, updated_at: serverTimestamp() });
+    okEl.classList.remove('hidden');
+    setTimeout(() => okEl.classList.add('hidden'), 3000);
+    loadVideos(true); // re-rankear con nuevos keywords sin cerrar el panel
+  } catch(err) {
+    errEl.textContent = err.message; errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false; label.textContent = 'Actualizar perfil →'; spinner.classList.add('hidden');
+  }
 });
 
 // ── Panel de Listas ───────────────────────────────────────────────────────────
@@ -679,6 +718,9 @@ function showError(msg){ $('error-state-msg').textContent=msg; $('error-state').
 // ── Perfil al estado ──────────────────────────────────────────────────────────
 function applyProfileToState(profile){
   state.userProfile=profile;
+  // Sincronizar textarea inline del panel de parámetros
+  const inline=$('profile-desc-inline');
+  if(inline && profile.description) inline.value=profile.description;
   if(profile.interest_keywords?.length) state.keywords=profile.interest_keywords;
   if(profile.feedback) state.feedback=profile.feedback;
   if(profile.lists) state.lists=profile.lists;
