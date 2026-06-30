@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -22,18 +25,17 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install wrangler
-        run: npm install -g wrangler
-
       - name: Validate JS syntax
-        run: node --check public/app.js && echo "✓ Sintaxis app.js OK"
+        run: node --check public/app.js && echo "✓ app.js OK"
 
       - name: Deploy to Cloudflare Pages
-        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: wrangler pages deploy public --project-name=youtube-tops --branch=main --commit-dirty=true
-
-      - name: Deploy skipped (no token)
-        if: ${{ secrets.CLOUDFLARE_API_TOKEN == '' }}
-        run: echo "ℹ️ CLOUDFLARE_API_TOKEN no configurado — deploy manual con npm run deploy"
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "ℹ️  CLOUDFLARE_API_TOKEN no configurado."
+            echo "    Para activar deploy automático agrega el secret en:"
+            echo "    github.com/ricardolopezreyero/YouTube_Tops/settings/secrets/actions"
+            echo "✓  Build validado correctamente — deploy manual con: npm run deploy"
+            exit 0
+          fi
+          npm install -g wrangler
+          wrangler pages deploy public --project-name=youtube-tops --branch=main --commit-dirty=true
