@@ -977,84 +977,104 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
   // Score popover en tarjetas de lista (igual que en el feed)
   if (data.breakdown) wireScorebadge(card, data);
 
-  card.querySelector('.btn-download-subs').addEventListener('click', async () => {
-    const btn   = card.querySelector('.btn-download-subs');
-    const span  = btn.querySelector('span');
-    const orig  = span.textContent;
-    btn.disabled = true;
-    span.textContent = 'Buscando…';
-    showToast('Buscando subtítulos…');
+  // Restaurar estado si este video ya tenía una descarga en curso al re-renderizar
+  const _existingSubsState = _subsDownloads.get(videoId);
+  if (_existingSubsState) {
+    const _subsBtn = card.querySelector('.btn-download-subs');
+    _subsBtn.disabled = true;
+    _subsBtn.querySelector('span').textContent = _existingSubsState === 'generating' ? 'Con IA…' : 'Buscando…';
+  }
 
-    const titleParam = encodeURIComponent(data.title || videoId);
-    const idParam    = encodeURIComponent(videoId);
-
-    const triggerDownload = async (res) => {
-      const blob  = await res.blob();
-      const fname = (data.title || videoId).replace(/[^\w\s\-áéíóúñÁÉÍÓÚÑ]/g, '').trim().slice(0, 80) + '.txt';
-      const link  = document.createElement('a');
-      link.href   = URL.createObjectURL(blob);
-      link.download = fname;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(link.href), 5000);
-    };
-
-    try {
-      const res = await fetch(`/api/subtitles?videoId=${idParam}&title=${titleParam}`);
-
-      // Respuesta directa — tiene subtítulos (nativos o Supadata instantáneo)
-      if (res.ok) {
-        await triggerDownload(res);
-        showToast('✓ Subtítulos descargados');
-        return;
-      }
-
-      // Video largo: Supadata generando con IA en background
-      if (res.status === 202) {
-        span.textContent = 'Con IA…';
-        showToast('Generando transcripción con IA, espera un momento…');
-
-        let attempts = 0;
-        const MAX    = 15; // 15 × 8s = 2 min
-        await new Promise((resolve) => {
-          const poll = setInterval(async () => {
-            attempts++;
-            try {
-              const pr = await fetch(`/api/subtitles?videoId=${idParam}&title=${titleParam}&check=true`);
-              if (pr.ok) {
-                clearInterval(poll);
-                await triggerDownload(pr);
-                showToast('✓ Subtítulos generados con IA');
-                resolve();
-              } else if (pr.status !== 202 || attempts >= MAX) {
-                clearInterval(poll);
-                const j = await pr.json().catch(() => ({}));
-                showToast(j.error || (attempts >= MAX ? 'Tiempo agotado, intenta de nuevo.' : 'Error generando subtítulos.'), 'error');
-                resolve();
-              }
-            } catch {
-              if (attempts >= MAX) { clearInterval(poll); resolve(); }
-            }
-          }, 8000);
-        });
-        return;
-      }
-
-      // Error (404 u otro)
-      const json = await res.json().catch(() => ({}));
-      showToast(json.error || 'Este video no tiene subtítulos disponibles.', 'error');
-
-    } catch {
-      showToast('Error al descargar subtítulos', 'error');
-    } finally {
-      btn.disabled = false;
-      span.textContent = orig;
-    }
+  card.querySelector('.btn-download-subs').addEventListener('click', () => {
+    _subsDownload(videoId, data.title || videoId);
   });
 
 
   return card;
+}
+
+// ── Descargas de subtítulos en paralelo ───────────────────────────────────────
+// Mapa con estado de cada descarga activa: videoId → 'fetching' | 'generating'
+const _subsDownloads = new Map();
+
+function _subsGetBtn(videoId) {
+  return document.getElementById(`listrow-${CSS.escape(videoId)}`)
+                 ?.querySelector('.btn-download-subs') ?? null;
+}
+
+function _subsApplyState(videoId, state) {
+  const btn = _subsGetBtn(videoId);
+  if (!btn) return;
+  const span = btn.querySelector('span');
+  if (state === null) {
+    btn.disabled = false;
+    span.textContent = 'TXT';
+  } else {
+    btn.disabled = true;
+    span.textContent = state === 'generating' ? 'Con IA…' : 'Buscando…';
+  }
+}
+
+function _subsDownload(videoId, title) {
+  if (_subsDownloads.has(videoId)) return; // ya en curso
+  _subsDownloads.set(videoId, 'fetching');
+  _subsApplyState(videoId, 'fetching');
+
+  const titleParam = encodeURIComponent(title || videoId);
+  const idParam    = encodeURIComponent(videoId);
+  const fname      = (title || videoId).replace(/[^\w\s\-áéíóúñÁÉÍÓÚÑ]/g, '').trim().slice(0, 80) + '.txt';
+
+  const triggerDownload = (blob) => {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = fname;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(link.href), 5000);
+  };
+
+  const done = (toastMsg, isError = false) => {
+    _subsDownloads.delete(videoId);
+    _subsApplyState(videoId, null);
+    showToast(toastMsg, isError ? 'error' : undefined);
+  };
+
+  fetch(`/api/subtitles?videoId=${idParam}&title=${titleParam}`)
+    .then(async res => {
+      if (res.ok) {
+        triggerDownload(await res.blob());
+        done('✓ Subtítulos descargados');
+        return;
+      }
+      if (res.status === 202) {
+        _subsDownloads.set(videoId, 'generating');
+        _subsApplyState(videoId, 'generating');
+        showToast('Generando transcripción con IA…');
+
+        let attempts = 0;
+        const MAX = 15; // 15 × 8s ≈ 2 min
+        const poll = setInterval(async () => {
+          attempts++;
+          try {
+            const pr = await fetch(`/api/subtitles?videoId=${idParam}&title=${titleParam}&check=true`);
+            if (pr.ok) {
+              clearInterval(poll);
+              triggerDownload(await pr.blob());
+              done('✓ Transcripción generada con IA');
+            } else if (pr.status !== 202 || attempts >= MAX) {
+              clearInterval(poll);
+              const j = await pr.json().catch(() => ({}));
+              done(j.error || (attempts >= MAX ? 'Tiempo agotado, intenta de nuevo.' : 'Error generando subtítulos.'), true);
+            }
+          } catch { if (attempts >= MAX) { clearInterval(poll); done('Error de red.', true); } }
+        }, 8000);
+        return;
+      }
+      const j = await res.json().catch(() => ({}));
+      done(j.error || 'Este video no tiene subtítulos disponibles.', true);
+    })
+    .catch(() => done('Error al descargar subtítulos', true));
 }
 
 // ── Modal de Sinopsis ─────────────────────────────────────────────────────────
