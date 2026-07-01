@@ -890,6 +890,12 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
         <button class="btn-list-action btn-copy-url" title="Copiar URL">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         </button>
+        <button class="btn-list-action btn-download-subs" title="Descargar subtítulos TXT">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        </button>
+        <button class="btn-list-action btn-download-video" title="Descargar video">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
         <button class="btn-list-action btn-remove-from-list" title="Eliminar de la lista">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
@@ -911,6 +917,44 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
   card.querySelector('.btn-remove-from-list').addEventListener('click', () => removeFromList(state.currentListId, videoId));
   card.querySelector('.btn-synopsis').addEventListener('click', () =>
     openSynopsisModal(videoId, data, state.currentListId));
+
+  card.querySelector('.btn-download-subs').addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.href = `/api/subtitles?videoId=${encodeURIComponent(videoId)}&title=${encodeURIComponent(data.title || videoId)}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('Descargando subtítulos…');
+  });
+
+  card.querySelector('.btn-download-video').addEventListener('click', async () => {
+    const btn = card.querySelector('.btn-download-video');
+    btn.disabled = true;
+    btn.style.opacity = '.4';
+    showToast('Obteniendo enlace de descarga…');
+    try {
+      const res  = await fetch(`/api/download?videoId=${encodeURIComponent(videoId)}`);
+      const json = await res.json();
+      if (json.url) {
+        const link = document.createElement('a');
+        link.href     = json.url;
+        link.download = `${(data.title || videoId).replace(/[^\w\s\-]/g, '').trim()}.mp4`;
+        link.target   = '_blank';
+        link.rel      = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast(`⬇ Descargando (${json.quality})`);
+      } else {
+        showToast(json.error || 'No se pudo obtener el enlace', 'error');
+      }
+    } catch {
+      showToast('Error al obtener descarga', 'error');
+    } finally {
+      btn.disabled     = false;
+      btn.style.opacity = '';
+    }
+  });
 
   return card;
 }
