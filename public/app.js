@@ -728,7 +728,31 @@ function persistLists() { persistProfile(); }
 // ── Vista de Lista — slide navigation ────────────────────────────────────────
 const viewsSlider = document.querySelector('.views-slider');
 
-function showListView(listId) {
+// ── URL routing helpers ────────────────────────────────────────────────────────
+function listNumFromId(listId) {
+  const idx = state.lists.findIndex(l => l.id === listId);
+  return idx >= 0 ? idx + 1 : null;
+}
+function listIdFromNum(num) {
+  return state.lists[num - 1]?.id ?? null;
+}
+function handleInitialRoute() {
+  const num = parseInt(window.location.pathname.replace(/\D/g, ''), 10);
+  if (num > 0) {
+    const listId = listIdFromNum(num);
+    if (listId) { showListView(listId, false); return; }
+  }
+}
+window.addEventListener('popstate', () => {
+  const num = parseInt(window.location.pathname.replace(/\D/g, ''), 10);
+  if (num > 0) {
+    const listId = listIdFromNum(num);
+    if (listId) { showListView(listId, false); return; }
+  }
+  showHomeView(false);
+});
+
+function showListView(listId, pushState = true) {
   const list = state.lists.find(l => l.id === listId); if (!list) return;
   state.currentView = 'list'; state.currentListId = listId;
   closeListsPanel();
@@ -742,16 +766,23 @@ function showListView(listId) {
 
   // Slide hacia la izquierda (pane de home queda fuera)
   requestAnimationFrame(() => viewsSlider.classList.add('in-list'));
+
+  // Actualizar URL: /1, /2, /3...
+  if (pushState) {
+    const num = listNumFromId(listId);
+    if (num) history.pushState({ listId }, '', `/${num}`);
+  }
 }
 
-function showHomeView() {
+function showHomeView(pushState = true) {
   state.currentView = 'home'; state.currentListId = null;
   viewsSlider.classList.remove('in-list');
   // Limpiar sentinel de infinite scroll al volver
   _listScrollObserver?.disconnect();
   _listScrollObserver = null;
+  if (pushState) history.pushState({}, '', '/');
 }
-$('btn-back-home').addEventListener('click', showHomeView);
+$('btn-back-home').addEventListener('click', () => showHomeView());
 $('btn-delete-list').addEventListener('click', () => { if (state.currentListId) deleteList(state.currentListId); });
 $('btn-rename-list').addEventListener('click', () => { if (state.currentListId) renameList(state.currentListId); });
 $('btn-toggle-archived').addEventListener('click', () => {
@@ -1830,6 +1861,7 @@ wireKeywordsUI();
     applyProfileToState(storedProfile);
     showScreen('screen-app');
     renderListsBadge();
+    handleInitialRoute();
     loadVideos(true);
     startSyncLoop();
   } else {
