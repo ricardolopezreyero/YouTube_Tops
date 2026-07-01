@@ -880,34 +880,55 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
             Script Word
           </button>
         </div>
+
+        <div class="script-progress-wrap hidden">
+          <div class="script-progress-header">
+            <span class="script-progress-label">Generando script…</span>
+            <span class="script-progress-pct">0%</span>
+          </div>
+          <div class="script-progress-track">
+            <div class="script-progress-bar"></div>
+          </div>
+        </div>
       </div>
 
       <div class="list-card-actions">
         ${isArchived ? `
-          <button class="btn-list-action btn-unarchive" title="Restaurar a lista">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/></svg>
+          <button class="btn-list-action btn-unarchive" title="Restaurar" style="grid-column:1/-1">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/></svg>
+            <span>Restaurar</span>
           </button>
         ` : `
-          <button class="btn-move" data-dir="up"   title="Subir"  ${idx === 0         ? 'disabled' : ''}>↑</button>
-          <button class="btn-move" data-dir="down" title="Bajar"  ${idx === total - 1 ? 'disabled' : ''}>↓</button>
+          <button class="btn-move" data-dir="up" ${idx === 0 ? 'disabled' : ''}>
+            <span>↑</span><span>Subir</span>
+          </button>
+          <button class="btn-move" data-dir="down" ${idx === total - 1 ? 'disabled' : ''}>
+            <span>↓</span><span>Bajar</span>
+          </button>
           <button class="btn-list-action btn-move-list" title="Mover a otra lista">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 18 15 12 9 6"/></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 18 15 12 9 6"/></svg>
+            <span>Mover</span>
           </button>
           <button class="btn-list-action btn-archive-item" title="Archivar">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+            <span>Archivar</span>
           </button>
         `}
         <button class="btn-list-action btn-copy-url" title="Copiar URL">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span>URL</span>
         </button>
         <button class="btn-list-action btn-download-subs" title="Descargar subtítulos TXT">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          <span>TXT</span>
         </button>
-        <button class="btn-list-action btn-download-video" title="Descargar video">
+        <button class="btn-list-action btn-download-video" title="Descargar video MP4">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>Video</span>
         </button>
-        <button class="btn-list-action btn-remove-from-list" title="Eliminar de la lista">
+        <button class="btn-list-action btn-remove-from-list" title="Quitar de la lista">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <span>Quitar</span>
         </button>
       </div>
     </div>`;
@@ -1599,9 +1620,38 @@ function ensureHtmlDocxLoaded() {
 
 async function downloadScriptWord(videoId, data, btn) {
   if (!btn || btn.disabled) return;
+
+  // Barra de progreso dentro de la tarjeta
+  const card        = btn.closest('.list-card');
+  const progWrap    = card?.querySelector('.script-progress-wrap');
+  const progBar     = card?.querySelector('.script-progress-bar');
+  const progPct     = card?.querySelector('.script-progress-pct');
+
   const origHtml = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = `<svg class="btn-spin-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Generando…`;
+  btn.disabled   = true;
+  btn.innerHTML  = `<svg class="btn-spin-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Generando…`;
+
+  // Mostrar barra y arrancar animación exponencial (~25s para llegar a 88%)
+  if (progWrap) progWrap.classList.remove('hidden');
+  let elapsed = 0;
+  const tick = () => {
+    elapsed++;
+    // Curva exponencial: 88 * (1 - e^(-elapsed/20))
+    const pct = Math.min(88, Math.round(88 * (1 - Math.exp(-elapsed / 20))));
+    if (progBar) progBar.style.width = `${pct}%`;
+    if (progPct) progPct.textContent = `${pct}%`;
+  };
+  const timer = setInterval(tick, 1000);
+
+  const completeBar = () => {
+    clearInterval(timer);
+    if (progBar) { progBar.style.transition = 'width .4s ease'; progBar.style.width = '100%'; }
+    if (progPct) progPct.textContent = '100%';
+    setTimeout(() => {
+      if (progWrap) progWrap.classList.add('hidden');
+      if (progBar) { progBar.style.transition = ''; progBar.style.width = '0%'; }
+    }, 700);
+  };
 
   try {
     const [, json] = await Promise.all([
@@ -1612,6 +1662,8 @@ async function downloadScriptWord(videoId, data, btn) {
         body:    JSON.stringify({ videoId, title: data.title }),
       }).then(r => r.json()),
     ]);
+
+    completeBar();
 
     if (!json.script) {
       showToast(json.error || 'No se pudo generar el script', 'error');
@@ -1631,8 +1683,10 @@ async function downloadScriptWord(videoId, data, btn) {
     link.click();
     document.body.removeChild(link);
     setTimeout(() => URL.revokeObjectURL(link.href), 5000);
-    showToast('✓ Script descargado');
+    showToast('✓ Script Word descargado');
   } catch (err) {
+    clearInterval(timer);
+    if (progWrap) progWrap.classList.add('hidden');
     showToast(err.message || 'Error al generar el script', 'error');
   } finally {
     btn.disabled  = false;

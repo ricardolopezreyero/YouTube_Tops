@@ -764,27 +764,22 @@ input[type="range"] { accent-color:var(--accent); width:100%; cursor:pointer; }
   margin-top:.15rem;
 }
 
-/* Acciones */
+/* Acciones — grid 2 columnas con etiquetas */
 .list-card-actions {
-  display:flex; flex-direction:column; gap:.3rem; flex-shrink:0; padding-top:.05rem;
+  display:grid; grid-template-columns:repeat(2,1fr);
+  gap:.22rem; flex-shrink:0; align-content:start; min-width:118px;
 }
-.btn-move {
-  width:28px; height:28px; border-radius:var(--radius-sm);
+.btn-move, .btn-list-action {
+  height:26px; width:100%; padding:.1rem .4rem;
+  border-radius:var(--radius-sm);
   background:var(--bg-card2); border:1px solid var(--border);
-  font-size:.82rem; color:var(--text-muted); cursor:pointer;
-  display:flex; align-items:center; justify-content:center;
-  transition:background var(--t), color var(--t);
+  font-size:.67rem; font-weight:500; color:var(--text-muted); cursor:pointer;
+  display:flex; align-items:center; justify-content:flex-start; gap:.28rem;
+  transition:background var(--t), color var(--t), border-color var(--t);
+  white-space:nowrap; overflow:hidden;
 }
 .btn-move:hover:not(:disabled) { background:var(--accent); color:#fff; border-color:var(--accent); }
 .btn-move:disabled             { opacity:.3; cursor:not-allowed; }
-/* Botones de acción unificados */
-.btn-list-action {
-  width:28px; height:28px; border-radius:var(--radius-sm);
-  background:var(--bg-card2); border:1px solid var(--border);
-  color:var(--text-muted); cursor:pointer;
-  display:flex; align-items:center; justify-content:center;
-  transition:background var(--t), color var(--t), border-color var(--t);
-}
 .btn-list-action:hover { background:var(--bg-panel); color:var(--text); border-color:var(--accent); }
 .btn-remove-from-list:hover  { background:rgba(239,68,68,.18)  !important; color:var(--score-lo)  !important; border-color:var(--score-lo)  !important; }
 .btn-copy-url:hover          { background:rgba(34,197,94,.15)  !important; color:var(--score-hi)  !important; border-color:var(--score-hi)  !important; }
@@ -793,7 +788,7 @@ input[type="range"] { accent-color:var(--accent); width:100%; cursor:pointer; }
 .btn-move-list:hover         { background:var(--accent-glow)   !important; color:var(--accent)    !important; border-color:var(--accent)    !important; }
 .btn-download-subs:hover     { background:rgba(34,197,94,.15)  !important; color:var(--score-hi)  !important; border-color:var(--score-hi)  !important; }
 .btn-download-video:hover    { background:var(--accent-glow)   !important; color:var(--accent)    !important; border-color:var(--accent)    !important; }
-.btn-remove-from-list    { } /* hereda .btn-list-action */
+.btn-remove-from-list { } /* hereda estilos base */
 
 /* ── Botones de contenido (sinopsis + script) ───────────────────────────────── */
 .synopsis-section {
@@ -816,6 +811,26 @@ input[type="range"] { accent-color:var(--accent); width:100%; cursor:pointer; }
   background:var(--accent-glow);
 }
 .btn-synopsis--has-synopsis:hover { background:rgba(108,99,255,.28); }
+
+/* ── Barra de progreso inline (Script Word) ─────────────────────────────────── */
+.script-progress-wrap {
+  margin-top:.55rem;
+}
+.script-progress-header {
+  display:flex; justify-content:space-between; align-items:center;
+  font-size:.72rem; color:var(--text-muted); margin-bottom:.3rem;
+}
+.script-progress-label { font-weight:500; }
+.script-progress-pct   { font-weight:700; color:var(--accent); }
+.script-progress-track {
+  height:4px; background:var(--border); border-radius:999px; overflow:hidden;
+}
+.script-progress-bar {
+  height:100%; width:0%; border-radius:999px;
+  background:linear-gradient(90deg, var(--accent-dark), var(--accent));
+  transition:width .8s ease;
+  box-shadow:0 0 6px var(--accent-glow);
+}
 
 /* Botón Script Word */
 .btn-script-word {
@@ -941,10 +956,12 @@ input[type="range"] { accent-color:var(--accent); width:100%; cursor:pointer; }
 }
 .btn-toggle-archived:hover { color:var(--text); border-color:var(--accent); }
 
-/* En desktop: thumbnail a la izquierda */
+/* En desktop: thumbnail a la izquierda en su proporción 16:9 correcta */
 @media (min-width:640px) {
-  .list-card { flex-direction:row; }
-  .list-card-thumb-link { width:260px; height:auto; aspect-ratio:16/9; flex-shrink:0; }
+  .list-card              { flex-direction:row; align-items:flex-start; }
+  .list-card-thumb-link   { width:220px; flex-shrink:0; align-self:flex-start; }
+  /* aspect-ratio:16/9 ya está en la regla global — align-self:flex-start
+     evita que el flex container estire el thumbnail más allá de su proporción */
 }
 
 /* ── Sync dot (indicador de recepción de cambios remotos) ──────────────────── */
