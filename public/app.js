@@ -752,35 +752,29 @@ window.addEventListener('popstate', () => {
   showHomeView(false);
 });
 
-function showListView(listId, pushState = true) {
+function showListView(listId, updateUrl = true) {
   const list = state.lists.find(l => l.id === listId); if (!list) return;
   state.currentView = 'list'; state.currentListId = listId;
-  closeListsPanel();
 
-  // Pre-render inmediato (antes del slide para que el contenido ya esté ahí)
+  // Actualizar URL primero, antes de cualquier render
+  if (updateUrl) {
+    const num = state.lists.indexOf(list) + 1;
+    history.pushState({ listId }, '', `/${num}`);
+  }
+
+  closeListsPanel();
   $('list-view-name').textContent = list.name;
   renderListView();
-
-  // Scroll ambos panes al top antes de animar
   $('list-view').scrollTop = 0;
-
-  // Slide hacia la izquierda (pane de home queda fuera)
   requestAnimationFrame(() => viewsSlider.classList.add('in-list'));
-
-  // Actualizar URL: /1, /2, /3...
-  if (pushState) {
-    const num = listNumFromId(listId);
-    if (num) history.pushState({ listId }, '', `/${num}`);
-  }
 }
 
-function showHomeView(pushState = true) {
+function showHomeView(updateUrl = true) {
   state.currentView = 'home'; state.currentListId = null;
   viewsSlider.classList.remove('in-list');
-  // Limpiar sentinel de infinite scroll al volver
   _listScrollObserver?.disconnect();
   _listScrollObserver = null;
-  if (pushState) history.pushState({}, '', '/');
+  if (updateUrl) history.pushState({}, '', '/');
 }
 $('btn-back-home').addEventListener('click', () => showHomeView());
 $('btn-delete-list').addEventListener('click', () => { if (state.currentListId) deleteList(state.currentListId); });
