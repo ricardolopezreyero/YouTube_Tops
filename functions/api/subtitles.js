@@ -51,24 +51,10 @@ export async function onRequestGet(context) {
     return txtResponse(body, filename);
   }
 
-  // ── 3. Fallback: descripción vía YouTube Data API ─────────────────────────
-  const apiKey = env.YOUTUBE_API_KEY;
-  if (apiKey) {
-    const descKey = `description:${videoId}`;
-    let desc = await env.CACHE.get(descKey);
-    if (!desc) {
-      desc = await fetchDescription(apiKey, videoId);
-      if (desc && desc.length > 50) await env.CACHE.put(descKey, desc);
-    }
-    if (desc && desc.length > 50) {
-      const body = `${title}\n${ytUrl}\n\n${'─'.repeat(60)}\n[Descripción del video — subtítulos no disponibles]\n\n${desc}`;
-      return txtResponse(body, filename);
-    }
-  }
-
-  return new Response('Este video no tiene subtítulos ni descripción disponibles.', {
-    status: 404, headers: CORS,
-  });
+  return new Response(
+    JSON.stringify({ error: 'Este video no tiene subtítulos disponibles.' }),
+    { status: 404, headers: { ...CORS, 'Content-Type': 'application/json' } }
+  );
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────

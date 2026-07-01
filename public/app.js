@@ -977,13 +977,33 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
   // Score popover en tarjetas de lista (igual que en el feed)
   if (data.breakdown) wireScorebadge(card, data);
 
-  card.querySelector('.btn-download-subs').addEventListener('click', () => {
-    const link = document.createElement('a');
-    link.href = `/api/subtitles?videoId=${encodeURIComponent(videoId)}&title=${encodeURIComponent(data.title || videoId)}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast('Descargando subtítulos…');
+  card.querySelector('.btn-download-subs').addEventListener('click', async () => {
+    const btn = card.querySelector('.btn-download-subs');
+    btn.disabled = true;
+    showToast('Buscando subtítulos…');
+    try {
+      const url = `/api/subtitles?videoId=${encodeURIComponent(videoId)}&title=${encodeURIComponent(data.title || videoId)}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        showToast(json.error || 'Este video no tiene subtítulos disponibles.', 'error');
+        return;
+      }
+      const blob = await res.blob();
+      const fname = (data.title || videoId).replace(/[^\w\s\-áéíóúñÁÉÍÓÚÑ]/g, '').trim().slice(0, 80) + '.txt';
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = fname;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(link.href), 5000);
+      showToast('✓ Subtítulos descargados');
+    } catch {
+      showToast('Error al descargar subtítulos', 'error');
+    } finally {
+      btn.disabled = false;
+    }
   });
 
 
