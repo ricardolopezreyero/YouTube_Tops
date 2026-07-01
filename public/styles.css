@@ -845,6 +845,11 @@ input[type="range"] { accent-color:var(--accent); width:100%; cursor:pointer; }
   background:rgba(34,197,94,.12);
 }
 .btn-script-word:disabled { opacity:.55; cursor:not-allowed; }
+.btn-script-word--ready {
+  color:var(--score-hi); border-color:var(--score-hi);
+  background:rgba(34,197,94,.08);
+}
+.btn-script-word--ready:hover:not(:disabled) { background:rgba(34,197,94,.2); }
 
 /* Spinner inline para botones de acción */
 @keyframes btn-spin { to { transform:rotate(360deg); } }

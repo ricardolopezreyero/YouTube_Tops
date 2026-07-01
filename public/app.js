@@ -875,9 +875,10 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
             ${data.synopsis ? 'Ver sinopsis' : 'Sinopsis'}
           </button>
-          <button class="btn-script-word" type="button" title="Generar script completo en Word">
+          <button class="btn-script-word${data.script ? ' btn-script-word--ready' : ''}" type="button"
+                  title="${data.script ? 'Descargar Word (ya generado)' : 'Generar script completo en Word'}">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-            Script Word
+            ${data.script ? 'Descargar Word' : 'Script Word'}
           </button>
         </div>
 
@@ -1618,25 +1619,39 @@ function ensureHtmlDocxLoaded() {
   return _htmlDocxLoading;
 }
 
+const _SCRIPT_READY_HTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> Descargar Word`;
+
 async function downloadScriptWord(videoId, data, btn) {
   if (!btn || btn.disabled) return;
 
-  // Barra de progreso dentro de la tarjeta
-  const card        = btn.closest('.list-card');
-  const progWrap    = card?.querySelector('.script-progress-wrap');
-  const progBar     = card?.querySelector('.script-progress-bar');
-  const progPct     = card?.querySelector('.script-progress-pct');
+  // ── Si ya está generado: descarga instantánea sin llamar a la API ──────────
+  if (data.script) {
+    btn.disabled = true;
+    try {
+      await ensureHtmlDocxLoaded();
+      triggerDocxDownload(data.script, data);
+      showToast('⚡ Script desde caché');
+    } catch (err) {
+      showToast(err.message || 'Error al generar el Word', 'error');
+    } finally {
+      btn.disabled = false;
+    }
+    return;
+  }
 
-  const origHtml = btn.innerHTML;
-  btn.disabled   = true;
-  btn.innerHTML  = `<svg class="btn-spin-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Generando…`;
+  // ── Generación nueva ───────────────────────────────────────────────────────
+  const card     = btn.closest('.list-card');
+  const progWrap = card?.querySelector('.script-progress-wrap');
+  const progBar  = card?.querySelector('.script-progress-bar');
+  const progPct  = card?.querySelector('.script-progress-pct');
 
-  // Mostrar barra y arrancar animación exponencial (~25s para llegar a 88%)
+  btn.disabled  = true;
+  btn.innerHTML = `<svg class="btn-spin-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Generando…`;
+
   if (progWrap) progWrap.classList.remove('hidden');
   let elapsed = 0;
   const tick = () => {
     elapsed++;
-    // Curva exponencial: 88 * (1 - e^(-elapsed/20))
     const pct = Math.min(88, Math.round(88 * (1 - Math.exp(-elapsed / 20))));
     if (progBar) progBar.style.width = `${pct}%`;
     if (progPct) progPct.textContent = `${pct}%`;
@@ -1653,6 +1668,7 @@ async function downloadScriptWord(videoId, data, btn) {
     }, 700);
   };
 
+  let succeeded = false;
   try {
     const [, json] = await Promise.all([
       ensureHtmlDocxLoaded(),
@@ -1670,28 +1686,47 @@ async function downloadScriptWord(videoId, data, btn) {
       return;
     }
 
-    const html  = scriptMarkdownToDocHtml(json.script, data);
-    const blob  = window.htmlDocx.asBlob(html, {
-      orientation: 'portrait',
-      margins: { top: 1440, bottom: 1440, left: 1800, right: 1440 },
-    });
-    const fname = `${(data.title || videoId).replace(/[^\w\s\-áéíóúñÁÉÍÓÚÑ]/g, '').trim().slice(0, 70)}.docx`;
-    const link  = document.createElement('a');
-    link.href     = URL.createObjectURL(blob);
-    link.download = fname;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(link.href), 5000);
+    // Persistir en state para acceso instantáneo en clicks siguientes
+    data.script = json.script;
+    const listId = state.currentListId;
+    if (listId && state.listItems[listId]?.[videoId]) {
+      state.listItems[listId][videoId].script = json.script;
+      persistLists();
+    }
+
+    triggerDocxDownload(json.script, data);
     showToast(json.cached ? '⚡ Script desde caché' : '✓ Script Word descargado');
+    succeeded = true;
   } catch (err) {
     clearInterval(timer);
     if (progWrap) progWrap.classList.add('hidden');
     showToast(err.message || 'Error al generar el script', 'error');
   } finally {
-    btn.disabled  = false;
-    btn.innerHTML = origHtml;
+    btn.disabled = false;
+    if (succeeded) {
+      btn.innerHTML = _SCRIPT_READY_HTML;
+      btn.classList.add('btn-script-word--ready');
+      btn.title = 'Descargar Word (ya generado)';
+    } else {
+      btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> Script Word`;
+    }
   }
+}
+
+function triggerDocxDownload(script, data) {
+  const html  = scriptMarkdownToDocHtml(script, data);
+  const blob  = window.htmlDocx.asBlob(html, {
+    orientation: 'portrait',
+    margins: { top: 1440, bottom: 1440, left: 1800, right: 1440 },
+  });
+  const fname = `${(data.title || '').replace(/[^\w\s\-áéíóúñÁÉÍÓÚÑ]/g, '').trim().slice(0, 70) || 'script'}.docx`;
+  const link  = document.createElement('a');
+  link.href     = URL.createObjectURL(blob);
+  link.download = fname;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(link.href), 5000);
 }
 
 function scriptMarkdownToDocHtml(script, data) {

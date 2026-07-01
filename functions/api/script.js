@@ -75,10 +75,12 @@ export async function onRequestPost(context) {
     // ── 4. Workers AI — redactor profesional ─────────────────────────────────
     const prompt = buildPrompt(title, sourceText, sourceLabel);
 
-    for (const model of [
+    const models = [
       '@cf/meta/llama-3.1-8b-instruct',
       '@cf/mistral/mistral-7b-instruct-v0.1',
-    ]) {
+    ];
+    let lastErr = '';
+    for (const model of models) {
       try {
         const res = await env.AI.run(model, {
           messages: [
@@ -91,20 +93,25 @@ export async function onRequestPost(context) {
             },
             { role: 'user', content: prompt },
           ],
-          max_tokens:  2800,
+          max_tokens:  2000,
           temperature: 0.3,
         });
 
         const script = (res?.response ?? '').trim();
         if (script.length > 200) {
-          // Guardar en caché para todos los usuarios futuros
           await env.CACHE.put(scriptKey, script);
           return jsonOk({ script, source: sourceLabel });
         }
-      } catch { continue; }
+        lastErr = `Respuesta demasiado corta del modelo (${script.length} chars)`;
+      } catch (e) {
+        lastErr = e?.message ?? String(e);
+        // Pequeña pausa entre reintentos para evitar rate-limit back-to-back
+        await new Promise(r => setTimeout(r, 800));
+        continue;
+      }
     }
 
-    return jsonOk({ script: null, error: 'No se pudo generar el script. Intenta de nuevo.' });
+    return jsonOk({ script: null, error: `No se pudo generar el script: ${lastErr}` });
 
   } catch (err) {
     return jsonError(err.message, 500);
