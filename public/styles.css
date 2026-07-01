@@ -795,8 +795,11 @@ input[type="range"] { accent-color:var(--accent); width:100%; cursor:pointer; }
 .btn-download-video:hover    { background:var(--accent-glow)   !important; color:var(--accent)    !important; border-color:var(--accent)    !important; }
 .btn-remove-from-list    { } /* hereda .btn-list-action */
 
-/* ── Botón sinopsis en tarjeta de lista ─────────────────────────────────────── */
-.synopsis-section { margin-top:.55rem; }
+/* ── Botones de contenido (sinopsis + script) ───────────────────────────────── */
+.synopsis-section {
+  margin-top:.55rem;
+  display:flex; flex-wrap:wrap; gap:.4rem; align-items:center;
+}
 
 .btn-synopsis {
   display:inline-flex; align-items:center; gap:.35rem;
@@ -813,6 +816,24 @@ input[type="range"] { accent-color:var(--accent); width:100%; cursor:pointer; }
   background:var(--accent-glow);
 }
 .btn-synopsis--has-synopsis:hover { background:rgba(108,99,255,.28); }
+
+/* Botón Script Word */
+.btn-script-word {
+  display:inline-flex; align-items:center; gap:.35rem;
+  padding:.28rem .65rem; font-size:.76rem; font-weight:500;
+  background:var(--bg-card2); color:var(--text-muted);
+  border:1px solid var(--border); border-radius:999px; cursor:pointer;
+  transition:color var(--t), border-color var(--t), background var(--t);
+}
+.btn-script-word:hover:not(:disabled) {
+  color:var(--score-hi); border-color:var(--score-hi);
+  background:rgba(34,197,94,.12);
+}
+.btn-script-word:disabled { opacity:.55; cursor:not-allowed; }
+
+/* Spinner inline para botones de acción */
+@keyframes btn-spin { to { transform:rotate(360deg); } }
+.btn-spin-icon { animation:btn-spin .7s linear infinite; flex-shrink:0; }
 
 /* ── Modal de sinopsis ───────────────────────────────────────────────────────── */
 .modal-synopsis-card {

@@ -875,6 +875,10 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
             ${data.synopsis ? 'Ver sinopsis' : 'Sinopsis'}
           </button>
+          <button class="btn-script-word" type="button" title="Generar script completo en Word">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            Script Word
+          </button>
         </div>
       </div>
 
@@ -923,6 +927,9 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
   card.querySelector('.btn-remove-from-list').addEventListener('click', () => removeFromList(state.currentListId, videoId));
   card.querySelector('.btn-synopsis').addEventListener('click', () =>
     openSynopsisModal(videoId, data, state.currentListId));
+
+  card.querySelector('.btn-script-word').addEventListener('click', () =>
+    downloadScriptWord(videoId, data, card.querySelector('.btn-script-word')));
 
   // Score popover en tarjetas de lista (igual que en el feed)
   if (data.breakdown) wireScorebadge(card, data);
@@ -1572,6 +1579,131 @@ function applyProfileToState(p) {
     if (s.duration_min) { state.durMin = s.duration_min; $('dur-min').value = s.duration_min; $('dur-min-val').textContent = s.duration_min; }
     if (s.duration_max) { state.durMax = s.duration_max; $('dur-max').value = s.duration_max; $('dur-max-val').textContent = s.duration_max; }
   }
+}
+
+// ── Script Word ───────────────────────────────────────────────────────────────
+
+let _htmlDocxLoading = null;
+function ensureHtmlDocxLoaded() {
+  if (window.htmlDocx) return Promise.resolve();
+  if (_htmlDocxLoading)  return _htmlDocxLoading;
+  _htmlDocxLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = '/html-docx.js';
+    s.onload  = () => { _htmlDocxLoading = null; resolve(); };
+    s.onerror = () => { _htmlDocxLoading = null; reject(new Error('No se pudo cargar el generador de Word')); };
+    document.head.appendChild(s);
+  });
+  return _htmlDocxLoading;
+}
+
+async function downloadScriptWord(videoId, data, btn) {
+  if (!btn || btn.disabled) return;
+  const origHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<svg class="btn-spin-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Generando…`;
+
+  try {
+    const [, json] = await Promise.all([
+      ensureHtmlDocxLoaded(),
+      fetch('/api/script', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ videoId, title: data.title }),
+      }).then(r => r.json()),
+    ]);
+
+    if (!json.script) {
+      showToast(json.error || 'No se pudo generar el script', 'error');
+      return;
+    }
+
+    const html  = scriptMarkdownToDocHtml(json.script, data);
+    const blob  = window.htmlDocx.asBlob(html, {
+      orientation: 'portrait',
+      margins: { top: 1440, bottom: 1440, left: 1800, right: 1440 },
+    });
+    const fname = `${(data.title || videoId).replace(/[^\w\s\-áéíóúñÁÉÍÓÚÑ]/g, '').trim().slice(0, 70)}.docx`;
+    const link  = document.createElement('a');
+    link.href     = URL.createObjectURL(blob);
+    link.download = fname;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(link.href), 5000);
+    showToast('✓ Script descargado');
+  } catch (err) {
+    showToast(err.message || 'Error al generar el script', 'error');
+  } finally {
+    btn.disabled  = false;
+    btn.innerHTML = origHtml;
+  }
+}
+
+function scriptMarkdownToDocHtml(script, data) {
+  const lines = (script || '').split('\n');
+  let   bodyHtml = '';
+  let   inList   = false;
+
+  for (const raw of lines) {
+    const line = raw.trim();
+
+    if (!line) {
+      if (inList) { bodyHtml += '</ul>\n'; inList = false; }
+      continue;
+    }
+
+    if (line.startsWith('## ') || line.startsWith('### ')) {
+      if (inList) { bodyHtml += '</ul>\n'; inList = false; }
+      const text = esc(line.replace(/^#{2,3}\s+/, ''));
+      bodyHtml += `<h2>${text}</h2>\n`;
+      continue;
+    }
+
+    if (line.startsWith('- ') || line.startsWith('* ')) {
+      if (!inList) { bodyHtml += '<ul>\n'; inList = true; }
+      const content = applyInlineMarkdown(line.slice(2));
+      bodyHtml += `<li>${content}</li>\n`;
+      continue;
+    }
+
+    if (inList) { bodyHtml += '</ul>\n'; inList = false; }
+    bodyHtml += `<p>${applyInlineMarkdown(line)}</p>\n`;
+  }
+  if (inList) bodyHtml += '</ul>\n';
+
+  const today = new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+  body   { font-family:Calibri,Arial,sans-serif; font-size:11pt; color:#1a1a1a; line-height:1.6; }
+  h1     { font-size:20pt; font-weight:700; margin:0 0 6pt; color:#111; }
+  h2     { font-size:13pt; font-weight:700; margin:22pt 0 5pt; color:#222;
+           border-bottom:1pt solid #e0e0e0; padding-bottom:3pt; }
+  p      { margin:0 0 9pt; }
+  ul     { margin:0 0 9pt 1.3em; }
+  li     { margin-bottom:5pt; }
+  .meta  { font-size:9pt; color:#555; margin-bottom:20pt; padding-bottom:12pt;
+           border-bottom:2pt solid #ccc; line-height:1.9; }
+  a      { color:#6c63ff; text-decoration:none; }
+  strong { color:#111; font-weight:700; }
+</style>
+</head>
+<body>
+<h1>${esc(data.title || '')}</h1>
+<div class="meta">
+  <strong>Canal:</strong> ${esc(data.channel_title || '')}<br>
+  <strong>Video:</strong> <a href="${esc(data.url || '')}">${esc(data.url || '')}</a><br>
+  <strong>Fuente:</strong> <a href="https://youtube-tops.pages.dev">youtube-tops.pages.dev</a><br>
+  <strong>Generado:</strong> ${today}
+</div>
+${bodyHtml}
+</body></html>`;
+}
+
+function applyInlineMarkdown(text) {
+  return esc(text).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
 }
 
 // ── Teclado: Escape cierra cualquier modal o panel abierto ────────────────────
