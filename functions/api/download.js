@@ -1,10 +1,13 @@
 /**
  * GET /api/download?videoId=xxx
- * Devuelve la URL directa del stream MP4 de mayor calidad disponible
- * usando el cliente ANDROID de InnerTube (sin auth, sin cookies).
- * El cliente descarga directamente desde YouTube — cero ancho de banda del Worker.
+ * Obtiene la URL de descarga del video en máxima calidad via cobalt.tools API.
+ * cobalt maneja signature decryption, selección de formato y compatibilidad con YouTube.
+ * El Worker solo llama a cobalt y devuelve la URL — el cliente descarga directo
+ * desde cobalt/YouTube sin pasar tráfico por nuestros Workers.
  * RLR · EYE·181218
  */
+
+const COBALT_API = 'https://api.cobalt.tools/';
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -24,85 +27,61 @@ export async function onRequestGet(context) {
     return jsonError('videoId inválido', 400);
 
   try {
-    const result = await getBestFormat(videoId);
-    if (!result)
-      return jsonError('No se encontró formato de descarga para este video.', 404);
-
-    return new Response(JSON.stringify(result), {
-      headers: { 'Content-Type': 'application/json', ...CORS },
-    });
-  } catch (err) {
-    return jsonError(err.message, 500);
-  }
-}
-
-async function getBestFormat(videoId) {
-  // InnerTube ANDROID client — devuelve URLs directas sin cipher en combined formats
-  const res = await fetch('https://www.youtube.com/youtubei/v1/player', {
-    method: 'POST',
-    headers: {
-      'Content-Type':           'application/json',
-      'User-Agent':             'com.google.android.youtube/17.31.35 (Linux; U; Android 11) gzip',
-      'X-YouTube-Client-Name':  '3',
-      'X-YouTube-Client-Version': '17.31.35',
-    },
-    body: JSON.stringify({
-      context: {
-        client: {
-          clientName:       'ANDROID',
-          clientVersion:    '17.31.35',
-          androidSdkVersion: 30,
-          hl: 'es',
-          gl: 'MX',
-          userAgent: 'com.google.android.youtube/17.31.35 (Linux; U; Android 11) gzip',
-        },
+    const cobaltRes = await fetch(COBALT_API, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept':       'application/json',
       },
-      videoId,
-      params: '8AEB', // highest quality hint
-    }),
-  });
+      body: JSON.stringify({
+        url:           `https://www.youtube.com/watch?v=${videoId}`,
+        videoQuality:  'max',
+        filenameStyle: 'basic',
+        downloadMode:  'auto',
+      }),
+    });
 
-  if (!res.ok) return null;
+    const data = await cobaltRes.json().catch(() => ({}));
 
-  const data = await res.json();
+    // cobalt devuelve { status: "redirect"|"tunnel"|"picker"|"error", url, filename }
+    if (data.status === 'error') {
+      const msg = data.error?.code
+        ? cobalErrorMsg(data.error.code)
+        : 'El video no se puede descargar.';
+      return jsonError(msg, 422);
+    }
 
-  if (data?.playabilityStatus?.status === 'UNPLAYABLE' ||
-      data?.playabilityStatus?.status === 'LOGIN_REQUIRED')
-    return null;
+    if (data.status === 'redirect' || data.status === 'tunnel') {
+      return jsonOk({ url: data.url, filename: data.filename || `video-${videoId}.mp4` });
+    }
 
-  // combined formats (video + audio en el mismo archivo) — itag 22 = 720p, 18 = 360p
-  const combined = (data?.streamingData?.formats ?? [])
-    .filter(f => f.url && f.mimeType?.startsWith('video/mp4'))
-    .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
+    // picker → múltiples calidades (ej. si hay audio/video separados)
+    if (data.status === 'picker' && data.picker?.length) {
+      const best = data.picker[0]; // primera opción = mayor calidad
+      if (best?.url)
+        return jsonOk({ url: best.url, filename: data.filename || `video-${videoId}.mp4` });
+    }
 
-  if (combined.length) {
-    const best = combined[0];
-    return {
-      url:     best.url,
-      quality: best.qualityLabel || best.quality || 'HD',
-      itag:    best.itag,
-    };
+    return jsonError('Respuesta inesperada del servicio de descarga.', 502);
+
+  } catch (err) {
+    return jsonError(`Error al contactar servicio de descarga: ${err.message}`, 500);
   }
-
-  // Fallback: adaptive video-only mp4 (sin audio — peor experiencia pero algo es algo)
-  const adaptive = (data?.streamingData?.adaptiveFormats ?? [])
-    .filter(f => f.url && f.mimeType?.startsWith('video/mp4') && !f.audioChannels)
-    .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
-
-  if (adaptive.length) {
-    const best = adaptive[0];
-    return {
-      url:     best.url,
-      quality: (best.qualityLabel || best.quality || 'video') + ' (sin audio)',
-      itag:    best.itag,
-    };
-  }
-
-  return null;
 }
 
-function jsonError(msg, status) {
-  return new Response(JSON.stringify({ error: msg }), {
-    status, headers: { 'Content-Type': 'application/json', ...CORS },
-  });
+// ── Mensajes amigables para códigos de error de cobalt ──────────────────────
+function cobalErrorMsg(code) {
+  const map = {
+    'content.video.unavailable': 'El video no está disponible.',
+    'content.video.age':         'El video tiene restricción de edad.',
+    'content.video.private':     'El video es privado.',
+    'content.video.live':        'No se pueden descargar transmisiones en vivo.',
+    'fetch.fail':                'No se pudo acceder al video.',
+    'fetch.rate':                'Límite de descargas alcanzado, intenta en unos minutos.',
+    'service.quota':             'Cuota del servicio de descarga agotada, intenta más tarde.',
+  };
+  return map[code] ?? `No se pudo descargar (${code}).`;
 }
+
+function jsonOk(d)      { return new Response(JSON.stringify(d),            { headers: { 'Content-Type': 'application/json', ...CORS } }); }
+function jsonError(m,s) { return new Response(JSON.stringify({ error: m }), { status: s, headers: { 'Content-Type': 'application/json', ...CORS } }); }

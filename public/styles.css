@@ -50,7 +50,9 @@ input,textarea,select { font:inherit; color:inherit; }
   font-size:.85rem; z-index:9999; pointer-events:none;
   transition:opacity var(--t);
 }
-.toast.hidden { opacity:0; }
+.toast.hidden  { opacity:0; }
+.toast--error  { background:rgba(220,38,38,.92); border-color:rgba(239,68,68,.4); color:#fff; }
+.toast--ok     { background:rgba(34,197,94,.92);  border-color:rgba(34,197,94,.4);  color:#fff; }
 
 /* ── Shared helpers ─────────────────────────────────────────────────────────── */
 .hidden        { display:none !important; }
@@ -543,7 +545,7 @@ input[type="range"] { accent-color:var(--accent); width:100%; cursor:pointer; }
 .list-view-header {
   display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;
   padding:.85rem 1.25rem; border-bottom:1px solid var(--border);
-  background:var(--bg-panel); position:sticky; top:57px; z-index:100;
+  background:var(--bg-panel); position:sticky; top:0; z-index:100;
 }
 .list-view-title-wrap { display:flex; align-items:center; gap:.4rem; flex:1; min-width:0; }
 .list-view-name       { font-size:1.05rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -784,11 +786,13 @@ input[type="range"] { accent-color:var(--accent); width:100%; cursor:pointer; }
   transition:background var(--t), color var(--t), border-color var(--t);
 }
 .btn-list-action:hover { background:var(--bg-panel); color:var(--text); border-color:var(--accent); }
-.btn-remove-from-list:hover { background:rgba(239,68,68,.18) !important; color:var(--score-lo) !important; border-color:var(--score-lo) !important; }
-.btn-copy-url:hover         { background:rgba(34,197,94,.15) !important;  color:var(--score-hi) !important; border-color:var(--score-hi) !important; }
-.btn-archive-item:hover  { background:rgba(245,158,11,.15) !important; color:var(--score-mid) !important; border-color:var(--score-mid) !important; }
-.btn-unarchive:hover     { background:rgba(34,197,94,.15)  !important; color:var(--score-hi)  !important; border-color:var(--score-hi)  !important; }
-.btn-move-list:hover     { background:var(--accent-glow)   !important; color:var(--accent)    !important; border-color:var(--accent)    !important; }
+.btn-remove-from-list:hover  { background:rgba(239,68,68,.18)  !important; color:var(--score-lo)  !important; border-color:var(--score-lo)  !important; }
+.btn-copy-url:hover          { background:rgba(34,197,94,.15)  !important; color:var(--score-hi)  !important; border-color:var(--score-hi)  !important; }
+.btn-archive-item:hover      { background:rgba(245,158,11,.15) !important; color:var(--score-mid) !important; border-color:var(--score-mid) !important; }
+.btn-unarchive:hover         { background:rgba(34,197,94,.15)  !important; color:var(--score-hi)  !important; border-color:var(--score-hi)  !important; }
+.btn-move-list:hover         { background:var(--accent-glow)   !important; color:var(--accent)    !important; border-color:var(--accent)    !important; }
+.btn-download-subs:hover     { background:rgba(34,197,94,.15)  !important; color:var(--score-hi)  !important; border-color:var(--score-hi)  !important; }
+.btn-download-video:hover    { background:var(--accent-glow)   !important; color:var(--accent)    !important; border-color:var(--accent)    !important; }
 .btn-remove-from-list    { } /* hereda .btn-list-action */
 
 /* ── Botón sinopsis en tarjeta de lista ─────────────────────────────────────── */

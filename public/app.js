@@ -34,11 +34,17 @@ function fmtViews(n) {
 function scoreBadgeClass(s) { return s >= 0.6 ? 'score-hi' : s >= 0.35 ? 'score-mid' : 'score-lo'; }
 function uid()   { return Math.random().toString(36).slice(2, 10); }
 
-function showToast(msg, ms = 2500) {
-  const t = $('toast');
+function showToast(msg, typeOrMs = 2500) {
+  const t  = $('toast');
+  const ms = typeof typeOrMs === 'number' ? typeOrMs : 2500;
   t.textContent = msg;
-  t.classList.remove('hidden');
-  setTimeout(() => t.classList.add('hidden'), ms);
+  t.classList.remove('hidden', 'toast--error', 'toast--ok');
+  if (typeOrMs === 'error') t.classList.add('toast--error');
+  clearTimeout(t._hideTimer);
+  t._hideTimer = setTimeout(() => {
+    t.classList.add('hidden');
+    t.classList.remove('toast--error', 'toast--ok');
+  }, ms);
 }
 async function copyUrl(url) {
   try {
@@ -857,7 +863,7 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
         </a>
         <div class="list-card-meta">
           <span class="list-card-channel">${esc(data.channel_title)}</span>
-          ${data.score ? `<span class="${scoreBadgeClass(data.score)} score-badge" style="font-size:.68rem">Score ${(data.score * 100).toFixed(0)}</span>` : ''}
+          ${data.score ? `<span class="${scoreBadgeClass(data.score)} score-badge score-badge--clickable" style="font-size:.68rem">Score ${(data.score * 100).toFixed(0)}</span>` : ''}
         </div>
         <p id="reason-${CSS.escape(videoId)}" class="list-card-reason${hasReason ? '' : ' hidden'}">
           ${hasReason ? esc(data.reason) : ''}
@@ -918,6 +924,9 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
   card.querySelector('.btn-synopsis').addEventListener('click', () =>
     openSynopsisModal(videoId, data, state.currentListId));
 
+  // Score popover en tarjetas de lista (igual que en el feed)
+  if (data.breakdown) wireScorebadge(card, data);
+
   card.querySelector('.btn-download-subs').addEventListener('click', () => {
     const link = document.createElement('a');
     link.href = `/api/subtitles?videoId=${encodeURIComponent(videoId)}&title=${encodeURIComponent(data.title || videoId)}`;
@@ -931,27 +940,27 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
     const btn = card.querySelector('.btn-download-video');
     btn.disabled = true;
     btn.style.opacity = '.4';
-    showToast('Obteniendo enlace de descarga…');
+    showToast('Obteniendo enlace…');
     try {
       const res  = await fetch(`/api/download?videoId=${encodeURIComponent(videoId)}`);
       const json = await res.json();
       if (json.url) {
         const link = document.createElement('a');
         link.href     = json.url;
-        link.download = `${(data.title || videoId).replace(/[^\w\s\-]/g, '').trim()}.mp4`;
+        link.download = json.filename || `${(data.title || videoId).replace(/[^\w\s\-]/g, '').trim()}.mp4`;
         link.target   = '_blank';
         link.rel      = 'noopener noreferrer';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        showToast(`⬇ Descargando (${json.quality})`);
+        showToast('⬇ Descarga iniciada');
       } else {
         showToast(json.error || 'No se pudo obtener el enlace', 'error');
       }
     } catch {
-      showToast('Error al obtener descarga', 'error');
+      showToast('Error de conexión al descargar', 'error');
     } finally {
-      btn.disabled     = false;
+      btn.disabled      = false;
       btn.style.opacity = '';
     }
   });
@@ -1564,6 +1573,33 @@ function applyProfileToState(p) {
     if (s.duration_max) { state.durMax = s.duration_max; $('dur-max').value = s.duration_max; $('dur-max-val').textContent = s.duration_max; }
   }
 }
+
+// ── Teclado: Escape cierra cualquier modal o panel abierto ────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (!$('modal-synopsis').classList.contains('hidden'))   { closeSynopsisModal(); return; }
+  if (!$('modal-add-video').classList.contains('hidden'))  { closeModal();         return; }
+  if (!$('modal-session').classList.contains('hidden'))    { $('modal-session').classList.add('hidden'); return; }
+  if (!moveListDropdown.classList.contains('hidden'))      { closeMoveDropdown();  return; }
+  if (!listDropdown.classList.contains('hidden'))          { closeDropdown();      return; }
+  if (!scorePopover.classList.contains('hidden'))          { scorePopover.classList.add('hidden'); return; }
+  if (!paramsPanel.classList.contains('hidden'))           { paramsPanel.classList.add('hidden'); btnParams.setAttribute('aria-expanded','false'); return; }
+  if (!listsPanel.classList.contains('hidden'))            { closeListsPanel();    return; }
+  if (state.currentView === 'list')                        { showHomeView(); }
+});
+
+// ── Touch: swipe horizontal navega entre home ↔ lista ─────────────────────────
+let _swipeX = 0, _swipeY = 0;
+document.addEventListener('touchstart', e => {
+  _swipeX = e.touches[0].clientX;
+  _swipeY = e.touches[0].clientY;
+}, { passive: true });
+document.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - _swipeX;
+  const dy = e.changedTouches[0].clientY - _swipeY;
+  if (Math.abs(dx) < 55 || Math.abs(dy) > Math.abs(dx) * 0.8) return;
+  if (dx > 0 && state.currentView === 'list') showHomeView(); // ← deslizar derecha = volver
+}, { passive: true });
 
 // ── Inicio: sin auth, perfil sincronizado vía /api/profile (KV) ───────────────
 updateWeightsSum();
