@@ -1063,7 +1063,7 @@ function completeProgressBar() {
 
 async function generateSynopsisForModal(videoId, data, listId) {
   try {
-    const { synopsis, error } = await apiFetch('/api/synopsis', {
+    const { synopsis, error, cached } = await apiFetch('/api/synopsis', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ videoId, title: data.title }),
@@ -1683,7 +1683,7 @@ async function downloadScriptWord(videoId, data, btn) {
     link.click();
     document.body.removeChild(link);
     setTimeout(() => URL.revokeObjectURL(link.href), 5000);
-    showToast('✓ Script Word descargado');
+    showToast(json.cached ? '⚡ Script desde caché' : '✓ Script Word descargado');
   } catch (err) {
     clearInterval(timer);
     if (progWrap) progWrap.classList.add('hidden');

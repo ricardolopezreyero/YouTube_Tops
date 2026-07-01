@@ -1,9 +1,13 @@
 /**
  * POST /api/synopsis
- * Genera un resumen de 3 párrafos usando:
- *   1. Subtítulos vía timedtext API (si disponibles)
- *   2. Descripción completa del video vía YouTube Data API v3 (fallback)
- * Usa Workers AI para resumir. RLR · EYE·181218
+ * Genera un resumen de 3 párrafos usando subtítulos o descripción.
+ *
+ * Caché compartida (KV):
+ *   synopsis:VIDEO_ID    → texto de la sinopsis generada
+ *   transcript:VIDEO_ID  → transcript crudo (compartido con /api/subtitles y /api/script)
+ *   description:VIDEO_ID → descripción de YouTube (compartida)
+ *
+ * RLR · EYE·181218
  */
 
 const CORS = {
@@ -18,28 +22,46 @@ export async function onRequestOptions() {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
-  const apiKey = env.YOUTUBE_API_KEY;
 
   try {
     const { videoId, title = '' } = await request.json().catch(() => ({}));
     if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId))
       return jsonError('videoId inválido', 400);
 
-    // ── 1. Intentar subtítulos vía timedtext (captions ASR directas) ──────────
-    const transcript = await fetchTranscript(videoId);
+    // ── 1. Caché de sinopsis ya generada ──────────────────────────────────────
+    const synopsisKey = `synopsis:${videoId}`;
+    const cached = await env.CACHE.get(synopsisKey);
+    if (cached) return jsonOk({ synopsis: cached, source: 'caché', cached: true });
 
-    let sourceText = '';
+    // ── 2. Obtener transcript (caché compartida primero) ──────────────────────
+    const transcriptKey = `transcript:${videoId}`;
+    let transcript = await env.CACHE.get(transcriptKey);
+    if (!transcript) {
+      transcript = await fetchTranscript(videoId);
+      if (transcript && transcript.length > 150)
+        await env.CACHE.put(transcriptKey, transcript);
+      else
+        transcript = null;
+    }
+
+    let sourceText  = '';
     let sourceLabel = '';
 
     if (transcript && transcript.length > 150) {
       sourceText  = sampleText(transcript, 10_000);
       sourceLabel = 'subtítulos del video';
     } else {
-      // ── 2. Fallback: descripción completa con YouTube Data API ───────────────
+      // ── 3. Fallback: descripción (caché compartida primero) ────────────────
+      const apiKey = env.YOUTUBE_API_KEY;
       if (!apiKey)
         return jsonOk({ synopsis: null, error: 'Sin subtítulos disponibles y sin API key configurada.' });
 
-      const desc = await fetchDescription(apiKey, videoId);
+      const descKey = `description:${videoId}`;
+      let desc = await env.CACHE.get(descKey);
+      if (!desc) {
+        desc = await fetchDescription(apiKey, videoId);
+        if (desc && desc.length > 50) await env.CACHE.put(descKey, desc);
+      }
       if (!desc || desc.length < 50)
         return jsonOk({ synopsis: null, error: 'Este video no tiene suficiente información disponible.' });
 
@@ -47,7 +69,7 @@ export async function onRequestPost(context) {
       sourceLabel = 'descripción del video';
     }
 
-    // ── 3. Generar resumen con Workers AI ─────────────────────────────────────
+    // ── 4. Generar resumen con Workers AI ────────────────────────────────────
     const prompt = `Información del video "${title}" (fuente: ${sourceLabel}):
 
 ---
@@ -77,8 +99,11 @@ Máximo 90 palabras por párrafo. Responde SOLO los 3 párrafos, nada más.`;
           temperature: 0.4,
         });
         const synopsis = (res?.response ?? '').trim();
-        if (synopsis.length > 80)
+        if (synopsis.length > 80) {
+          // Guardar en caché para todos los usuarios futuros
+          await env.CACHE.put(synopsisKey, synopsis);
           return jsonOk({ synopsis, source: sourceLabel });
+        }
       } catch { continue; }
     }
 
@@ -89,7 +114,8 @@ Máximo 90 palabras por párrafo. Responde SOLO los 3 párrafos, nada más.`;
   }
 }
 
-// ── Fetch subtítulos via timedtext (sin auth, solo ASR disponibles públicamente) ──
+// ── helpers ────────────────────────────────────────────────────────────────────
+
 async function fetchTranscript(videoId) {
   const langs = ['es', 'es-419', 'es-MX', 'en', 'en-US', 'en-GB'];
   for (const lang of langs) {
@@ -97,15 +123,11 @@ async function fetchTranscript(videoId) {
       try {
         const url = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${lang}${kind}&fmt=vtt`;
         const res = await fetch(url, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible)',
-            'Accept-Language': 'es-MX,es;q=0.9,en;q=0.8',
-          },
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible)', 'Accept-Language': 'es-MX,es;q=0.9,en;q=0.8' },
         });
         if (!res.ok) continue;
         const text = await res.text();
         if (text.length < 80 || text.startsWith('<!')) continue;
-        // Parsear VTT o XML según lo que devuelva
         return parseSubtitles(text);
       } catch { continue; }
     }
@@ -113,7 +135,6 @@ async function fetchTranscript(videoId) {
   return null;
 }
 
-// ── Fetch descripción completa vía YouTube Data API ───────────────────────────
 async function fetchDescription(apiKey, videoId) {
   try {
     const res = await fetch(
@@ -125,9 +146,7 @@ async function fetchDescription(apiKey, videoId) {
   } catch { return null; }
 }
 
-// ── Parsear subtítulos VTT o XML → texto plano ────────────────────────────────
 function parseSubtitles(raw) {
-  // VTT format
   if (raw.includes('WEBVTT') || raw.includes('-->')) {
     return raw
       .split('\n')
@@ -136,7 +155,6 @@ function parseSubtitles(raw) {
       .filter(Boolean)
       .join(' ');
   }
-  // XML format
   return (raw.match(/<text[^>]*>([\s\S]*?)<\/text>/g) ?? [])
     .map(t =>
       t.replace(/<text[^>]*>/, '').replace('</text>', '')
@@ -148,7 +166,6 @@ function parseSubtitles(raw) {
     .join(' ');
 }
 
-// ── Muestra representativa del texto (inicio + medio + final) ─────────────────
 function sampleText(text, maxChars) {
   if (text.length <= maxChars) return text;
   const third = Math.floor(maxChars / 3);
@@ -160,5 +177,5 @@ function sampleText(text, maxChars) {
   ].join('\n\n[...]\n\n');
 }
 
-function jsonOk(d)        { return new Response(JSON.stringify(d),            { headers: { 'Content-Type': 'application/json', ...CORS } }); }
-function jsonError(m, s)  { return new Response(JSON.stringify({ error: m }), { status: s, headers: { 'Content-Type': 'application/json', ...CORS } }); }
+function jsonOk(d)       { return new Response(JSON.stringify(d),            { headers: { 'Content-Type': 'application/json', ...CORS } }); }
+function jsonError(m, s) { return new Response(JSON.stringify({ error: m }), { status: s, headers: { 'Content-Type': 'application/json', ...CORS } }); }

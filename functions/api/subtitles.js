@@ -1,7 +1,11 @@
 /**
  * GET /api/subtitles?videoId=xxx&title=xxx
- * Descarga los subtítulos del video como archivo .txt.
- * Intenta timedtext primero; fallback a descripción completa vía YouTube API.
+ * Descarga los subtítulos del video como .txt.
+ *
+ * Caché compartida (KV):
+ *   transcript:VIDEO_ID → texto crudo del transcript
+ *   Si otro usuario ya generó esto, se sirve al instante sin tocar YouTube.
+ *
  * RLR · EYE·181218
  */
 
@@ -25,20 +29,39 @@ export async function onRequestGet(context) {
     return new Response('videoId inválido', { status: 400, headers: CORS });
 
   const filename = sanitizeFilename(title) + '.txt';
+  const ytUrl    = `https://www.youtube.com/watch?v=${videoId}`;
 
-  // ── 1. Subtítulos vía timedtext ────────────────────────────────────────────
-  const transcript = await fetchTranscript(videoId);
-  if (transcript && transcript.length > 150) {
-    const body = `${title}\nhttps://www.youtube.com/watch?v=${videoId}\n\n${'─'.repeat(60)}\n\n${transcript}`;
+  // ── 1. Caché compartida de transcript ─────────────────────────────────────
+  const transcriptKey = `transcript:${videoId}`;
+  let transcript = await env.CACHE.get(transcriptKey);
+
+  if (!transcript) {
+    // ── 2. Intentar timedtext (captions ASR) ──────────────────────────────
+    transcript = await fetchTranscript(videoId);
+    if (transcript && transcript.length > 150) {
+      // Guardar en caché para futuros requests (sinopsis, script, otros usuarios)
+      await env.CACHE.put(transcriptKey, transcript);
+    } else {
+      transcript = null;
+    }
+  }
+
+  if (transcript) {
+    const body = `${title}\n${ytUrl}\n\n${'─'.repeat(60)}\n\n${transcript}`;
     return txtResponse(body, filename);
   }
 
-  // ── 2. Fallback: descripción completa vía YouTube Data API ─────────────────
+  // ── 3. Fallback: descripción vía YouTube Data API ─────────────────────────
   const apiKey = env.YOUTUBE_API_KEY;
   if (apiKey) {
-    const desc = await fetchDescription(apiKey, videoId);
+    const descKey = `description:${videoId}`;
+    let desc = await env.CACHE.get(descKey);
+    if (!desc) {
+      desc = await fetchDescription(apiKey, videoId);
+      if (desc && desc.length > 50) await env.CACHE.put(descKey, desc);
+    }
     if (desc && desc.length > 50) {
-      const body = `${title}\nhttps://www.youtube.com/watch?v=${videoId}\n\n${'─'.repeat(60)}\n[Descripción del video — subtítulos no disponibles]\n\n${desc}`;
+      const body = `${title}\n${ytUrl}\n\n${'─'.repeat(60)}\n[Descripción del video — subtítulos no disponibles]\n\n${desc}`;
       return txtResponse(body, filename);
     }
   }

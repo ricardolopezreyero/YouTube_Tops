@@ -3,13 +3,12 @@
  * Genera un artículo completo y bien redactado a partir de los subtítulos del video.
  * NO es una sinopsis: es la reescritura completa del contenido, con secciones y negritas.
  *
- * Flujo:
- *   1. Subtítulos via timedtext API
- *   2. Fallback: descripción completa via YouTube Data API
- *   3. Workers AI reescribe como artículo profesional
+ * Caché compartida (KV):
+ *   script:VIDEO_ID      → markdown del artículo generado
+ *   transcript:VIDEO_ID  → transcript crudo (compartido con /api/subtitles y /api/synopsis)
+ *   description:VIDEO_ID → descripción de YouTube (compartida)
  *
- * Retorna { script, source } donde script tiene formato markdown:
- *   ## Sección, **negrita**, párrafos
+ * Retorna { script, source } donde script tiene formato markdown.
  *
  * RLR · EYE·181218
  */
@@ -33,21 +32,39 @@ export async function onRequestPost(context) {
     if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId))
       return jsonError('videoId inválido', 400);
 
-    // ── 1. Subtítulos vía timedtext ────────────────────────────────────────────
-    const transcript = await fetchTranscript(videoId);
+    // ── 1. Caché del script ya generado ───────────────────────────────────────
+    const scriptKey = `script:${videoId}`;
+    const cached = await env.CACHE.get(scriptKey);
+    if (cached) return jsonOk({ script: cached, source: 'caché', cached: true });
+
+    // ── 2. Obtener transcript (caché compartida primero) ──────────────────────
+    const transcriptKey = `transcript:${videoId}`;
+    let transcript = await env.CACHE.get(transcriptKey);
+    if (!transcript) {
+      transcript = await fetchTranscript(videoId);
+      if (transcript && transcript.length > 150)
+        await env.CACHE.put(transcriptKey, transcript);
+      else
+        transcript = null;
+    }
+
     let sourceText  = '';
     let sourceLabel = '';
 
     if (transcript && transcript.length > 300) {
-      // Para el script usamos más texto que para la sinopsis (hasta 16K chars)
       sourceText  = sampleText(transcript, 16_000);
       sourceLabel = 'subtítulos';
     } else {
-      // ── 2. Fallback: descripción vía YouTube Data API ────────────────────────
+      // ── 3. Fallback: descripción (caché compartida primero) ────────────────
       const apiKey = env.YOUTUBE_API_KEY;
       if (!apiKey) return jsonOk({ script: null, error: 'Sin subtítulos ni API key configurada.' });
 
-      const desc = await fetchDescription(apiKey, videoId);
+      const descKey = `description:${videoId}`;
+      let desc = await env.CACHE.get(descKey);
+      if (!desc) {
+        desc = await fetchDescription(apiKey, videoId);
+        if (desc && desc.length > 50) await env.CACHE.put(descKey, desc);
+      }
       if (!desc || desc.length < 80)
         return jsonOk({ script: null, error: 'No hay suficiente contenido para generar el script.' });
 
@@ -55,7 +72,7 @@ export async function onRequestPost(context) {
       sourceLabel = 'descripción';
     }
 
-    // ── 3. Workers AI — redactor profesional ──────────────────────────────────
+    // ── 4. Workers AI — redactor profesional ─────────────────────────────────
     const prompt = buildPrompt(title, sourceText, sourceLabel);
 
     for (const model of [
@@ -79,8 +96,11 @@ export async function onRequestPost(context) {
         });
 
         const script = (res?.response ?? '').trim();
-        if (script.length > 200)
+        if (script.length > 200) {
+          // Guardar en caché para todos los usuarios futuros
+          await env.CACHE.put(scriptKey, script);
           return jsonOk({ script, source: sourceLabel });
+        }
       } catch { continue; }
     }
 
@@ -117,7 +137,8 @@ REGLAS DE ESCRITURA:
 Responde SOLO el artículo, sin preámbulos ni explicaciones sobre lo que vas a hacer.`;
 }
 
-// ── Subtítulos vía timedtext ───────────────────────────────────────────────────
+// ── helpers ────────────────────────────────────────────────────────────────────
+
 async function fetchTranscript(videoId) {
   const langs = ['es', 'es-419', 'es-MX', 'en', 'en-US', 'en-GB'];
   for (const lang of langs) {
@@ -126,7 +147,7 @@ async function fetchTranscript(videoId) {
         const url = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${lang}${kind}&fmt=vtt`;
         const res = await fetch(url, {
           headers: {
-            'User-Agent':     'Mozilla/5.0 (compatible)',
+            'User-Agent':      'Mozilla/5.0 (compatible)',
             'Accept-Language': 'es-MX,es;q=0.9,en;q=0.8',
           },
         });
@@ -140,7 +161,6 @@ async function fetchTranscript(videoId) {
   return null;
 }
 
-// ── Descripción vía YouTube Data API ──────────────────────────────────────────
 async function fetchDescription(apiKey, videoId) {
   try {
     const res = await fetch(
@@ -152,7 +172,6 @@ async function fetchDescription(apiKey, videoId) {
   } catch { return null; }
 }
 
-// ── Parsear VTT / XML → texto plano ──────────────────────────────────────────
 function parseSubtitles(raw) {
   if (raw.includes('WEBVTT') || raw.includes('-->')) {
     return raw
@@ -173,7 +192,6 @@ function parseSubtitles(raw) {
     .join(' ');
 }
 
-// ── Muestra representativa (inicio + medio + final) ───────────────────────────
 function sampleText(text, maxChars) {
   if (text.length <= maxChars) return text;
   const third = Math.floor(maxChars / 3);
