@@ -76,22 +76,22 @@ export async function onRequestPost(context) {
     }
 
     // ── 4. Generar resumen con Workers AI ────────────────────────────────────
-    const prompt = `INSTRUCCIÓN CRÍTICA: Escribe TODO en ESPAÑOL. Si el contenido está en inglés, tradúcelo completamente al español.
+    const cleanedSource = cleanSource(sourceText);
+    const prompt = `Eres un redactor experto en español. Escribe ÚNICAMENTE en ESPAÑOL.
 
-Información del video "${title}" (fuente: ${sourceLabel}):
+Video: "${title}"
+Fuente: ${sourceLabel}
 
 ---
-${sourceText}
+${cleanedSource}
 ---
 
-Escribe un resumen en ESPAÑOL con exactamente 3 párrafos separados por línea en blanco.
-REGLAS ESTRICTAS:
-- Sin "Párrafo 1:", sin numeración, sin encabezados de ningún tipo.
-- Cada párrafo empieza con su IDEA CLAVE en negrita así: **idea clave** seguida del desarrollo.
-- Párrafo 1: premisa central del video.
-- Párrafo 2: puntos, frameworks o tácticas concretas que se explican.
-- Párrafo 3: por qué vale la pena verlo completo.
-Máximo 90 palabras por párrafo. Responde SOLO los 3 párrafos, nada más.`;
+Escribe exactamente 3 párrafos en ESPAÑOL separados por línea en blanco. Si el contenido está en inglés, tradúcelo y redáctalo en español.
+- Sin numeración ni encabezados.
+- Cada párrafo empieza con la **idea clave en negrita** seguida del desarrollo.
+- Párrafo 1: premisa central. Párrafo 2: tácticas o frameworks concretos. Párrafo 3: por qué vale verlo.
+- Máximo 90 palabras por párrafo.
+Responde SOLO los 3 párrafos en español.`;
 
     for (const model of [
       '@cf/meta/llama-3.1-8b-instruct',
@@ -183,6 +183,13 @@ function sampleText(text, maxChars) {
     text.slice(mid - Math.floor(third / 2), mid + Math.floor(third / 2)),
     text.slice(-third),
   ].join('\n\n[...]\n\n');
+}
+
+function cleanSource(text) {
+  return text
+    .replace(/\d{1,2}:\d{2}(:\d{2})?\s*/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function isEnglish(text) {

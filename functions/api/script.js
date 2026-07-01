@@ -130,32 +130,47 @@ export async function onRequestPost(context) {
 
 // ── Prompt ─────────────────────────────────────────────────────────────────────
 function buildPrompt(title, text, source) {
-  return `INSTRUCCIÓN CRÍTICA: Escribe TODO en ESPAÑOL. Si el contenido fuente está en inglés, tradúcelo completamente. Ninguna palabra en inglés en la respuesta final.
+  const cleaned = cleanSource(text);
+  return `Eres un redactor experto en español. Escribe ÚNICAMENTE en ESPAÑOL.
 
-Transcripción/descripción del video "${title}":
+Título del video: "${title}"
+
+El siguiente es el contenido fuente (puede estar en inglés o español — no importa, tu respuesta siempre es en ESPAÑOL):
 
 ---
-${text}
+${cleaned}
 ---
 
-TAREA: Convierte el contenido anterior en un artículo profesional en ESPAÑOL con la siguiente estructura:
+Redacta un artículo profesional en ESPAÑOL con esta estructura exacta:
 
-1. INTRODUCCIÓN (1 párrafo de 4-5 oraciones): Presenta al experto o tema, cuál es el problema central que resuelve y por qué importa.
+Párrafo de introducción (4-5 oraciones): presenta el tema, al experto o ponente, y el valor principal del contenido.
 
-2. SECCIONES DE CONTENIDO (3-5 secciones, cada una con ## como título):
-   - Cada sección debe tener 2-4 párrafos completos con las ideas desarrolladas
-   - NO hagas listas de temas con 1-2 oraciones — desarrolla cada idea con profundidad
-   - Incluye ejemplos, cifras, metodologías y recomendaciones específicas del video
+## [Título de sección 1]
+2-3 párrafos desarrollando las ideas, con ejemplos y cifras concretas del contenido.
 
-3. ## Puntos clave (al final): lista de 5-7 aprendizajes accionables con viñetas (-)
+## [Título de sección 2]
+2-3 párrafos. Repite para cada tema relevante (3-5 secciones en total).
 
-ESTILO:
-- **Negrita** para conceptos clave, metodologías, nombres, cifras y herramientas
-- Voz activa, sin muletillas del habla
-- El lector debe aprender todo lo esencial sin ver el video
-- Sin frases como "En este video..." o "El autor explica..." — escribe directo
+## Puntos clave
+- Aprendizaje 1
+- Aprendizaje 2
+(5-7 puntos accionables)
 
-Responde ÚNICAMENTE con el artículo en español. Sin preámbulos.`;
+Reglas:
+- Todo en ESPAÑOL. Si el fuente está en inglés, traduce y desarrolla.
+- **Negrita** para conceptos, nombres, metodologías y cifras importantes.
+- Voz activa, directo al punto. Sin "En este video...", sin meta-comentarios.
+- El lector aprende todo lo esencial leyendo el artículo.
+
+Responde solo con el artículo. Empieza directo con la introducción.`;
+}
+
+// Limpia timestamps y formato de capítulos antes de enviar al modelo
+function cleanSource(text) {
+  return text
+    .replace(/\d{1,2}:\d{2}(:\d{2})?\s*/g, '')   // quita timestamps "2:00", "1:05:19"
+    .replace(/\n{3,}/g, '\n\n')                    // colapsa líneas vacías múltiples
+    .trim();
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────

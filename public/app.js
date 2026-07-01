@@ -1606,6 +1606,13 @@ function ensureHtmlDocxLoaded() {
 
 const _SCRIPT_READY_HTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> Descargar Word`;
 
+function scriptIsEnglish(text) {
+  const s = (text || '').slice(0, 500).toLowerCase();
+  const en = ['the ', ' and ', ' of ', ' to ', ' in ', ' is ', ' are ', ' for ', ' that ', ' with '];
+  const es = ['el ', ' la ', ' de ', ' que ', ' en ', ' es ', ' los ', ' las ', ' para ', ' con '];
+  return en.filter(w => s.includes(w)).length > es.filter(w => s.includes(w)).length + 2;
+}
+
 async function downloadScriptWord(videoId, data, btn) {
   if (!btn || btn.disabled) return;
 
@@ -1668,6 +1675,12 @@ async function downloadScriptWord(videoId, data, btn) {
 
     if (!json.script) {
       showToast(json.error || 'No se pudo generar el script', 'error');
+      return;
+    }
+
+    // Rechazar si el modelo ignoró la instrucción y generó en inglés
+    if (scriptIsEnglish(json.script)) {
+      showToast('El modelo generó en inglés, intenta de nuevo', 'error');
       return;
     }
 
