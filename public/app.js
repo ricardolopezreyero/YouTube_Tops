@@ -923,10 +923,6 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
           <span>TXT</span>
         </button>
-        <button class="btn-list-action btn-download-video" title="Descargar video MP4">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <span>Video</span>
-        </button>
         <button class="btn-list-action btn-remove-from-list" title="Quitar de la lista">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           <span>Quitar</span>
@@ -965,34 +961,6 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
     showToast('Descargando subtítulos…');
   });
 
-  card.querySelector('.btn-download-video').addEventListener('click', async () => {
-    const btn = card.querySelector('.btn-download-video');
-    btn.disabled = true;
-    btn.style.opacity = '.4';
-    showToast('Obteniendo enlace…');
-    try {
-      const res  = await fetch(`/api/download?videoId=${encodeURIComponent(videoId)}`);
-      const json = await res.json();
-      if (json.url) {
-        const link = document.createElement('a');
-        link.href     = json.url;
-        link.download = json.filename || `${(data.title || videoId).replace(/[^\w\s\-]/g, '').trim()}.mp4`;
-        link.target   = '_blank';
-        link.rel      = 'noopener noreferrer';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        showToast('⬇ Descarga iniciada');
-      } else {
-        showToast(json.error || 'No se pudo obtener el enlace', 'error');
-      }
-    } catch {
-      showToast('Error de conexión al descargar', 'error');
-    } finally {
-      btn.disabled      = false;
-      btn.style.opacity = '';
-    }
-  });
 
   return card;
 }
