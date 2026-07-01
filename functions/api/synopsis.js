@@ -31,7 +31,13 @@ export async function onRequestPost(context) {
     // ── 1. Caché de sinopsis ya generada ──────────────────────────────────────
     const synopsisKey = `synopsis:${videoId}`;
     const cached = await env.CACHE.get(synopsisKey);
-    if (cached) return jsonOk({ synopsis: cached, source: 'caché', cached: true });
+    if (cached) {
+      if (isEnglish(cached)) {
+        await env.CACHE.delete(synopsisKey);
+      } else {
+        return jsonOk({ synopsis: cached, source: 'caché', cached: true });
+      }
+    }
 
     // ── 2. Obtener transcript (caché compartida primero) ──────────────────────
     const transcriptKey = `transcript:${videoId}`;
@@ -70,7 +76,9 @@ export async function onRequestPost(context) {
     }
 
     // ── 4. Generar resumen con Workers AI ────────────────────────────────────
-    const prompt = `Información del video "${title}" (fuente: ${sourceLabel}):
+    const prompt = `INSTRUCCIÓN CRÍTICA: Escribe TODO en ESPAÑOL. Si el contenido está en inglés, tradúcelo completamente al español.
+
+Información del video "${title}" (fuente: ${sourceLabel}):
 
 ---
 ${sourceText}
@@ -92,7 +100,7 @@ Máximo 90 palabras por párrafo. Responde SOLO los 3 párrafos, nada más.`;
       try {
         const res = await env.AI.run(model, {
           messages: [
-            { role: 'system', content: 'Eres un curador de contenido educativo. Respondes en español con párrafos útiles y concretos. Sin encabezados.' },
+            { role: 'system', content: 'IDIOMA: Siempre respondes en ESPAÑOL, sin excepción. Si el contenido fuente está en inglés, lo traduces y reescribes en español. Nunca escribes en inglés. Eres un curador de contenido educativo. Respondes con párrafos útiles y concretos. Sin encabezados.' },
             { role: 'user',   content: prompt },
           ],
           max_tokens:  700,
@@ -175,6 +183,15 @@ function sampleText(text, maxChars) {
     text.slice(mid - Math.floor(third / 2), mid + Math.floor(third / 2)),
     text.slice(-third),
   ].join('\n\n[...]\n\n');
+}
+
+function isEnglish(text) {
+  const sample  = text.slice(0, 600).toLowerCase();
+  const enWords = ['the ', ' and ', ' of ', ' to ', ' in ', ' is ', ' are ', ' for ', ' that ', ' with ', ' this '];
+  const esWords = ['el ', ' la ', ' de ', ' que ', ' en ', ' es ', ' los ', ' las ', ' para ', ' una ', ' con '];
+  const enCount = enWords.filter(w => sample.includes(w)).length;
+  const esCount = esWords.filter(w => sample.includes(w)).length;
+  return enCount > esCount + 2;
 }
 
 function jsonOk(d)       { return new Response(JSON.stringify(d),            { headers: { 'Content-Type': 'application/json', ...CORS } }); }

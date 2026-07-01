@@ -35,7 +35,14 @@ export async function onRequestPost(context) {
     // ── 1. Caché del script ya generado ───────────────────────────────────────
     const scriptKey = `script:${videoId}`;
     const cached = await env.CACHE.get(scriptKey);
-    if (cached) return jsonOk({ script: cached, source: 'caché', cached: true });
+    if (cached) {
+      // Invalidar si el script en caché está en inglés (generado con prompt anterior)
+      if (isEnglish(cached)) {
+        await env.CACHE.delete(scriptKey);
+      } else {
+        return jsonOk({ script: cached, source: 'caché', cached: true });
+      }
+    }
 
     // ── 2. Obtener transcript (caché compartida primero) ──────────────────────
     const transcriptKey = `transcript:${videoId}`;
@@ -87,9 +94,12 @@ export async function onRequestPost(context) {
             {
               role: 'system',
               content:
-                'Eres un editor profesional de contenido educativo en español. ' +
-                'Recibes transcripciones de videos y las conviertes en artículos bien redactados, ' +
-                'concisos y estructurados. Nunca escribes meta-comentarios sobre tu tarea.',
+                'IDIOMA: Siempre respondes en ESPAÑOL, sin excepción. ' +
+                'Si la transcripción fuente está en inglés, la traduces y reescribes completamente en español. ' +
+                'Nunca incluyes palabras o frases en inglés en tu respuesta. ' +
+                'Eres un editor profesional de contenido educativo. ' +
+                'Conviertes transcripciones en artículos bien redactados con párrafos completos y ricos en contenido. ' +
+                'Nunca escribes listas de temas vacíos. Nunca escribes meta-comentarios sobre tu tarea.',
             },
             { role: 'user', content: prompt },
           ],
@@ -120,28 +130,32 @@ export async function onRequestPost(context) {
 
 // ── Prompt ─────────────────────────────────────────────────────────────────────
 function buildPrompt(title, text, source) {
-  return `Fuente: ${source} del video "${title}"
+  return `INSTRUCCIÓN CRÍTICA: Escribe TODO en ESPAÑOL. Si el contenido fuente está en inglés, tradúcelo completamente. Ninguna palabra en inglés en la respuesta final.
+
+Transcripción/descripción del video "${title}":
 
 ---
 ${text}
 ---
 
-TAREA: Convierte este contenido en un artículo profesional en ESPAÑOL.
+TAREA: Convierte el contenido anterior en un artículo profesional en ESPAÑOL con la siguiente estructura:
 
-ESTRUCTURA OBLIGATORIA:
-1. Párrafo de introducción: captura la idea central y el valor del video (3-4 oraciones)
-2. Secciones temáticas con subtítulos (usa ## para cada sección)
-3. Sección final: ## Puntos clave — lista de 4-6 aprendizajes directos con viñetas (-)
+1. INTRODUCCIÓN (1 párrafo de 4-5 oraciones): Presenta al experto o tema, cuál es el problema central que resuelve y por qué importa.
 
-REGLAS DE ESCRITURA:
-- Los conceptos importantes, cifras, herramientas, nombres y recomendaciones van en **negrita**
-- Voz activa, oraciones directas, sin muletillas del habla ("o sea", "básicamente", "tipo")
-- Conserva TODAS las ideas, ejemplos, números y recomendaciones del contenido original
-- No resumas: quien lea el artículo debe aprender exactamente lo mismo que viendo el video
-- Sin frases introductorias como "En este video...", "El autor explica..." — empieza directo
-- Máximo 2000 palabras
+2. SECCIONES DE CONTENIDO (3-5 secciones, cada una con ## como título):
+   - Cada sección debe tener 2-4 párrafos completos con las ideas desarrolladas
+   - NO hagas listas de temas con 1-2 oraciones — desarrolla cada idea con profundidad
+   - Incluye ejemplos, cifras, metodologías y recomendaciones específicas del video
 
-Responde SOLO el artículo, sin preámbulos ni explicaciones sobre lo que vas a hacer.`;
+3. ## Puntos clave (al final): lista de 5-7 aprendizajes accionables con viñetas (-)
+
+ESTILO:
+- **Negrita** para conceptos clave, metodologías, nombres, cifras y herramientas
+- Voz activa, sin muletillas del habla
+- El lector debe aprender todo lo esencial sin ver el video
+- Sin frases como "En este video..." o "El autor explica..." — escribe directo
+
+Responde ÚNICAMENTE con el artículo en español. Sin preámbulos.`;
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -208,6 +222,17 @@ function sampleText(text, maxChars) {
     text.slice(mid - Math.floor(third / 2), mid + Math.floor(third / 2)),
     text.slice(-third),
   ].join('\n\n[...]\n\n');
+}
+
+// Heurística: detecta si un texto está predominantemente en inglés
+// para invalidar entradas de caché generadas con el prompt anterior
+function isEnglish(text) {
+  const sample  = text.slice(0, 600).toLowerCase();
+  const enWords = ['the ', ' and ', ' of ', ' to ', ' in ', ' is ', ' are ', ' for ', ' that ', ' with ', ' this '];
+  const esWords = ['el ', ' la ', ' de ', ' que ', ' en ', ' es ', ' los ', ' las ', ' para ', ' una ', ' con '];
+  const enCount = enWords.filter(w => sample.includes(w)).length;
+  const esCount = esWords.filter(w => sample.includes(w)).length;
+  return enCount > esCount + 2;
 }
 
 function jsonOk(d)       { return new Response(JSON.stringify(d),            { headers: { 'Content-Type': 'application/json', ...CORS } }); }
