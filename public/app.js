@@ -978,31 +978,78 @@ function buildListItemRow(videoId, data, idx, total, isArchived = false, eager =
   if (data.breakdown) wireScorebadge(card, data);
 
   card.querySelector('.btn-download-subs').addEventListener('click', async () => {
-    const btn = card.querySelector('.btn-download-subs');
+    const btn   = card.querySelector('.btn-download-subs');
+    const span  = btn.querySelector('span');
+    const orig  = span.textContent;
     btn.disabled = true;
+    span.textContent = 'Buscando…';
     showToast('Buscando subtítulos…');
-    try {
-      const url = `/api/subtitles?videoId=${encodeURIComponent(videoId)}&title=${encodeURIComponent(data.title || videoId)}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        showToast(json.error || 'Este video no tiene subtítulos disponibles.', 'error');
-        return;
-      }
-      const blob = await res.blob();
+
+    const titleParam = encodeURIComponent(data.title || videoId);
+    const idParam    = encodeURIComponent(videoId);
+
+    const triggerDownload = async (res) => {
+      const blob  = await res.blob();
       const fname = (data.title || videoId).replace(/[^\w\s\-áéíóúñÁÉÍÓÚÑ]/g, '').trim().slice(0, 80) + '.txt';
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
+      const link  = document.createElement('a');
+      link.href   = URL.createObjectURL(blob);
       link.download = fname;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       setTimeout(() => URL.revokeObjectURL(link.href), 5000);
-      showToast('✓ Subtítulos descargados');
+    };
+
+    try {
+      const res = await fetch(`/api/subtitles?videoId=${idParam}&title=${titleParam}`);
+
+      // Respuesta directa — tiene subtítulos (nativos o Supadata instantáneo)
+      if (res.ok) {
+        await triggerDownload(res);
+        showToast('✓ Subtítulos descargados');
+        return;
+      }
+
+      // Video largo: Supadata generando con IA en background
+      if (res.status === 202) {
+        span.textContent = 'Con IA…';
+        showToast('Generando transcripción con IA, espera un momento…');
+
+        let attempts = 0;
+        const MAX    = 15; // 15 × 8s = 2 min
+        await new Promise((resolve) => {
+          const poll = setInterval(async () => {
+            attempts++;
+            try {
+              const pr = await fetch(`/api/subtitles?videoId=${idParam}&title=${titleParam}&check=true`);
+              if (pr.ok) {
+                clearInterval(poll);
+                await triggerDownload(pr);
+                showToast('✓ Subtítulos generados con IA');
+                resolve();
+              } else if (pr.status !== 202 || attempts >= MAX) {
+                clearInterval(poll);
+                const j = await pr.json().catch(() => ({}));
+                showToast(j.error || (attempts >= MAX ? 'Tiempo agotado, intenta de nuevo.' : 'Error generando subtítulos.'), 'error');
+                resolve();
+              }
+            } catch {
+              if (attempts >= MAX) { clearInterval(poll); resolve(); }
+            }
+          }, 8000);
+        });
+        return;
+      }
+
+      // Error (404 u otro)
+      const json = await res.json().catch(() => ({}));
+      showToast(json.error || 'Este video no tiene subtítulos disponibles.', 'error');
+
     } catch {
       showToast('Error al descargar subtítulos', 'error');
     } finally {
       btn.disabled = false;
+      span.textContent = orig;
     }
   });
 
