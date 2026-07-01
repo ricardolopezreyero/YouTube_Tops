@@ -116,19 +116,26 @@ export async function onRequestPost(context) {
   }
 }
 
-function extractVideoId(url) {
-  if (!url) return null;
+function extractVideoId(raw) {
+  if (!raw) return null;
+  // Normalizar: quitar espacios, saltos de línea, comillas accidentales
+  const url = raw.replace(/[\s"']/g, '');
+
   const patterns = [
-    /[?&]v=([a-zA-Z0-9_-]{11})/,
-    /youtu\.be\/([a-zA-Z0-9_-]{11})/,
-    /\/shorts\/([a-zA-Z0-9_-]{11})/,
-    /\/embed\/([a-zA-Z0-9_-]{11})/,
-    /\/v\/([a-zA-Z0-9_-]{11})/,
+    /[?&]v=([a-zA-Z0-9_-]{11})/,          // ?v= o &v= (watch, music, m.)
+    /youtu\.be\/([a-zA-Z0-9_-]{11})/,      // youtu.be/ID
+    /\/shorts\/([a-zA-Z0-9_-]{11})/,       // /shorts/ID
+    /\/live\/([a-zA-Z0-9_-]{11})/,         // /live/ID  (transmisiones)
+    /\/embed\/([a-zA-Z0-9_-]{11})/,        // /embed/ID
+    /\/v\/([a-zA-Z0-9_-]{11})/,            // /v/ID  (antiguo)
+    /\/watch\/([a-zA-Z0-9_-]{11})/,        // /watch/ID  (alternativo)
+    /\/clip\/[^/]+\/([a-zA-Z0-9_-]{11})/,  // /clip/CLIP_ID/VIDEO_ID
   ];
   for (const p of patterns) {
     const m = url.match(p);
     if (m) return m[1];
   }
+  // ID de 11 chars solo (sin URL)
   if (/^[a-zA-Z0-9_-]{11}$/.test(url)) return url;
   return null;
 }

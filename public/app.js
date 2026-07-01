@@ -1384,11 +1384,12 @@ $('modal-add-video').addEventListener('click', e => { if (e.target === $('modal-
 $('btn-open-add-video-bar').addEventListener('click',  () => openAddVideoModal(null));
 $('btn-open-add-video-list').addEventListener('click', () => openAddVideoModal(state.currentListId));
 
-$('btn-fetch-video').addEventListener('click', async () => {
+async function fetchVideoFromUrl() {
   const btn = $('btn-fetch-video'), label = btn.querySelector('.btn-label'), spinner = btn.querySelector('.btn-spinner');
   const url = $('video-url-input').value.trim(), errEl = $('modal-error');
   errEl.classList.add('hidden');
   if (!url) { errEl.textContent = 'Pega una URL de YouTube primero.'; errEl.classList.remove('hidden'); return; }
+  if (btn.disabled) return;
   btn.disabled = true; label.textContent = 'Buscando…'; spinner.classList.remove('hidden');
   try {
     const { video } = await apiFetch('/api/add-video', {
@@ -1404,6 +1405,22 @@ $('btn-fetch-video').addEventListener('click', async () => {
     $('modal-list-select-wrap').classList.remove('hidden');
   } catch (err) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
   finally { btn.disabled = false; label.textContent = 'Buscar video'; spinner.classList.add('hidden'); }
+}
+
+$('btn-fetch-video').addEventListener('click', fetchVideoFromUrl);
+
+// Enter en el input lanza la búsqueda
+$('video-url-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); fetchVideoFromUrl(); }
+});
+
+// Al pegar un URL de YouTube, buscar automáticamente
+$('video-url-input').addEventListener('paste', e => {
+  const pasted = (e.clipboardData || window.clipboardData).getData('text').trim();
+  if (/youtu(\.be|be\.com)\//i.test(pasted)) {
+    // Esperar un tick para que el valor del input se actualice
+    setTimeout(fetchVideoFromUrl, 80);
+  }
 });
 
 $('btn-confirm-add-video').addEventListener('click', async () => {
